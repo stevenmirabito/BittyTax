@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 from ..version import __version__
 from ..config import config
-from ..tax import which_tax_year
+from ..tax.taxcalculator import TaxCalculator
 from .pricedata import PriceData
 
 class ValueAsset(object):
@@ -68,7 +68,8 @@ class ValueAsset(object):
             asset_price_ccy, name, data_source, url = self.price_data.get_historical(asset,
                                                                                      config.CCY,
                                                                                      timestamp)
-            self.price_report_cache(asset, timestamp, name, data_source, url, asset_price_ccy)
+            self.price_report_cache(
+                asset, timestamp, name, data_source, url, asset_price_ccy)
         else:
             asset_price_btc, name, data_source, url = self.price_data.get_historical(asset,
                                                                                      'BTC',
@@ -103,7 +104,8 @@ class ValueAsset(object):
 
     def price_report_cache(self, asset, timestamp, name, data_source, url,
                            price_ccy, price_btc=None):
-        tax_year = which_tax_year(timestamp)
+        tax = TaxCalculator.for_currency(config.CCY)
+        tax_year = tax.which_tax_year(timestamp)
 
         if tax_year not in self.price_report:
             self.price_report[tax_year] = {}

@@ -7,6 +7,7 @@
             <th align="left">Asset</th>
             <th align="left">Date</th>
             <th align="left">Type</th>
+            <th align="left">Wallet</th>
             <th align="left">Description</th>
             <th align="right">Quantity</th>
             <th align="right">Amount</th>
@@ -18,6 +19,7 @@
                 <td>{{te.asset}}</td>
                 <td>{{te.date|datefilter}}</td>
                 <td>{{te.type}}</td>
+                <td>{{te.wallet}}</td>
                 <td width="30%">{{te.note|nowrapfilter}}</td>
                 <td align="right">{{te.quantity|quantityfilter}}</td>
                 {% set asset_totals.quantity = asset_totals.quantity + te.quantity %}
@@ -30,6 +32,7 @@
         {% if asset_totals.events > 1 %}
             <tr>
                 <td align="left">Total</td>
+                <td align="left"></td>
                 <td align="left"></td>
                 <td align="left"></td>
                 <td align="left"></td>
@@ -46,6 +49,7 @@
         <th align="left">Income Type</th>
         <th></th>
         <th></th>
+        <th></th>
         <th width="30%"></th>
         <th></th>
         <th align="right">Amount</th>
@@ -54,6 +58,7 @@
     {% for i_type in income.type_totals|sort %}
         <tr>
             <td>{{i_type}}</td>
+            <td></td>
             <td></td>
             <td></td>
             <td width="30%"></td>
@@ -66,6 +71,43 @@
 <table>
     <tr class="total_row">
         <td align="left">Total</td>
+        <td align="left"></td>
+        <td align="left"></td>
+        <td align="left"></td>
+        <td align="left" width="30%"></td>
+        <td align="right"></td>
+        <td align="right">{{income.totals['amount']|valuefilter}}</td>
+        <td align="right">{{income.totals['fees']|valuefilter}}</td>
+    </tr>
+</table>
+<table repeat="1" width="100%">
+    <tr>
+        <th align="left">Wallets</th>
+        <th></th>
+        <th></th>
+        <th></th>
+        <th width="30%"></th>
+        <th></th>
+        <th align="right">Amount</th>
+        <th align="right">Fees</th>
+    </tr>
+    {% for i_wallet in income.wallet_totals|sort %}
+        <tr>
+            <td>{{i_wallet}}</td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td width="30%"></td>
+            <td></td>
+            <td align="right">{{income.wallet_totals[i_wallet]['amount']|valuefilter}}</td>
+            <td align="right">{{income.wallet_totals[i_wallet]['fees']|valuefilter}}</td>
+        </tr>
+    {% endfor %}
+</table>
+<table>
+    <tr class="total_row">
+        <td align="left">Total</td>
+        <td align="left"></td>
         <td align="left"></td>
         <td align="left"></td>
         <td align="left" width="30%"></td>

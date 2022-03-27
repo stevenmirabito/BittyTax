@@ -103,7 +103,7 @@ class AuditRecords(object):
                 Back.YELLOW+Fore.BLACK, Back.RESET+Fore.YELLOW,
                 wallet, asset, '{:0,f}'.format(self.wallets[wallet][asset].normalize())))
 
-    def compare_pools(self, holdings):
+    def compare_holdings(self, holdings):
         passed = True
         for asset in sorted(self.totals):
             if asset in config.fiat_list:
@@ -112,10 +112,10 @@ class AuditRecords(object):
             if asset in holdings:
                 if self.totals[asset] == holdings[asset].quantity:
                     if config.args.debug:
-                        print("%scheck pool: %s (ok)" %(Fore.GREEN, asset))
+                        print("%scheck holding: %s (ok)" %(Fore.GREEN, asset))
                 else:
                     if config.args.debug:
-                        print("%scheck pool: %s %s (mismatch)" %(Fore.RED, asset,
+                        print("%scheck holding: %s %s (mismatch)" %(Fore.RED, asset,
                             '{:+0,f}'.format((holdings[asset].quantity-
                                               self.totals[asset]).normalize())))
 
@@ -123,37 +123,37 @@ class AuditRecords(object):
                     passed = False
             else:
                 if config.args.debug:
-                    print("%scheck pool: %s (missing)" %(Fore.RED, asset))
+                    print("%scheck holding: %s (missing)" %(Fore.RED, asset))
 
                 self._log_failure(asset, self.totals[asset], None)
                 passed = False
 
         return passed
 
-    def _log_failure(self, asset, audit, s104):
+    def _log_failure(self, asset, audit, quantity):
         failure = {}
         failure['asset'] = asset
         failure['audit'] = audit
-        failure['s104'] = s104
+        failure['quantity'] = quantity
 
         self.failures.append(failure)
 
     def report_failures(self):
         header = "%-8s %25s %25s %25s" % ('Asset',
                                           'Audit Balance',
-                                          'Section 104 Pool',
+                                          'Holdings',
                                           'Difference')
 
         print('\n%s%s' % (Fore.YELLOW, header))
         for failure in self.failures:
-            if failure['s104'] is not None:
+            if failure['quantity'] is not None:
                 print("%s%-8s %25s %25s %s%25s" % (
                     Fore.WHITE,
                     failure['asset'],
                     '{:0,f}'.format(failure['audit'].normalize()),
-                    '{:0,f}'.format(failure['s104'].normalize()),
+                    '{:0,f}'.format(failure['quantity'].normalize()),
                     Fore.RED,
-                    '{:+0,f}'.format((failure['s104']-failure['audit']).normalize())))
+                    '{:+0,f}'.format((failure['quantity']-failure['audit']).normalize())))
             else:
                 print("%s%-8s %25s %s%25s" % (
                     Fore.WHITE,

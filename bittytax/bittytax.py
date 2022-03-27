@@ -20,7 +20,7 @@ from .transactions import TransactionHistory
 from .audit import AuditRecords
 from .price.valueasset import ValueAsset
 from .price.exceptions import DataSourceError
-from .tax import TaxCalculator, CalculateCapitalGains as CCG
+from .tax.taxcalculator import TaxCalculator, CalculateCapitalGains as CCG
 from .report import ReportLog, ReportPdf
 from .exceptions import ImportFailureError
 
@@ -165,11 +165,8 @@ def do_tax(transaction_records):
     value_asset = ValueAsset()
     transaction_history = TransactionHistory(transaction_records, value_asset)
 
-    tax = TaxCalculator(transaction_history.transactions)
-    tax.pool_same_day()
-    tax.match(tax.DISPOSAL_SAME_DAY)
-    tax.match(tax.DISPOSAL_BED_AND_BREAKFAST)
-    tax.process_section104()
+    tax = TaxCalculator.for_currency(config.CCY)(transaction_history.transactions)
+    tax.calculate()
     return tax, value_asset
 
 def do_integrity_check(audit, holdings):
@@ -180,9 +177,9 @@ def do_integrity_check(audit, holdings):
     else:
         transfer_mismatch = False
 
-    pools_match = audit.compare_pools(holdings)
+    holdings_match = audit.compare_holdings(holdings)
 
-    if not pools_match or transfer_mismatch:
+    if not holdings_match or transfer_mismatch:
         int_passed = False
 
     print("%sintegrity check: %s%s" % (
@@ -192,13 +189,13 @@ def do_integrity_check(audit, holdings):
         print("%sWARNING%s Integrity check failed: disposal(s) detected during transfer, "
               "turn on logging [-d] to see transactions" % (
                   Back.YELLOW+Fore.BLACK, Back.RESET+Fore.YELLOW))
-    elif not pools_match:
+    elif not holdings_match:
         if not config.transfers_include:
-            print("%sWARNING%s Integrity check failed: audit does not match section 104 pools, "
+            print("%sWARNING%s Integrity check failed: audit does not match holdings, "
                   "please check Withdrawals and Deposits for missing fees" % (
                       Back.YELLOW+Fore.BLACK, Back.RESET+Fore.YELLOW))
         else:
-            print("%sERROR%s Integrity check failed: audit does not match section 104 pools" % (
+            print("%sERROR%s Integrity check failed: audit does not match holdings" % (
                 Back.RED+Fore.BLACK, Back.RESET+Fore.RED))
         audit.report_failures()
     return int_passed

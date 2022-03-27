@@ -15,6 +15,14 @@ import dateutil.parser
 
 from .version import __version__
 from .config import config
+from .tax.taxcalculator import TaxCalculator
+
+def has_multi_year_tax_year():
+    tax = TaxCalculator.for_currency(config.CCY)
+    today = datetime.today()
+    jan_tax_year = tax.which_tax_year(datetime(today.year, 1, 1, tzinfo=config.TZ_LOCAL))
+    dec_tax_year = tax.which_tax_year(datetime(today.year, 12, 31, tzinfo=config.TZ_LOCAL))
+    return jan_tax_year != dec_tax_year
 
 class ReportPdf(object):
     DEFAULT_FILENAME = 'BittyTax_Report'
@@ -37,7 +45,8 @@ class ReportPdf(object):
                                 'audit': audit,
                                 'tax_report': tax_report,
                                 'price_report': price_report,
-                                'holdings_report': holdings_report})
+                                'holdings_report': holdings_report,
+                                'multi_year_tax_year': has_multi_year_tax_year()})
 
         with ProgressSpinner():
             pdf_file = open(self.filename, 'w+b')
@@ -53,9 +62,9 @@ class ReportPdf(object):
     @staticmethod
     def datefilter(date):
         if isinstance(date, datetime):
-            return date.strftime('%d/%m/%Y')
+            return date.strftime(config.DATE_FORMAT)
         else:
-            return dateutil.parser.parse(date).strftime('%d/%m/%Y')
+            return dateutil.parser.parse(date).strftime(config.DATE_FORMAT)
 
     @staticmethod
     def quantityfilter(quantity):
@@ -63,7 +72,8 @@ class ReportPdf(object):
 
     @staticmethod
     def valuefilter(value):
-        return '&pound;{:0,.2f}'.format(value)
+        tpl = '({}{:0,.2f})' if value < 0 else '{}{:0,.2f}'
+        return tpl.format(config.sym(), abs(value))
 
     @staticmethod
     def nowrapfilter(text):
@@ -106,8 +116,13 @@ class ReportLog(object):
             if not config.args.summary:
                 self.audit()
 
-            print("\n%sTax Year - %d/%d%s" % (
-                Fore.CYAN+Style.BRIGHT, config.args.taxyear - 1, config.args.taxyear, Style.NORMAL))
+            if has_multi_year_tax_year():
+                print("\n%sTax Year - %d/%d%s" % (
+                    Fore.CYAN+Style.BRIGHT, config.args.taxyear - 1, config.args.taxyear, Style.NORMAL))
+            else:
+                print("\n%sTax Year - %d%s" % (
+                    Fore.CYAN+Style.BRIGHT, config.args.taxyear, Style.NORMAL))
+
             self.capital_gains(config.args.taxyear)
             if not config.args.summary:
                 self.income(config.args.taxyear)
@@ -118,8 +133,13 @@ class ReportLog(object):
                 self.audit()
 
             for tax_year in sorted(tax_report):
-                print("\n%sTax Year - %d/%d%s" % (
-                    Fore.CYAN+Style.BRIGHT, tax_year - 1, tax_year, Style.NORMAL))
+                if has_multi_year_tax_year():
+                    print("\n%sTax Year - %d/%d%s" % (
+                        Fore.CYAN+Style.BRIGHT, tax_year - 1, tax_year, Style.NORMAL))
+                else:
+                    print("\n%sTax Year - %d%s" % (
+                        Fore.CYAN+Style.BRIGHT, tax_year, Style.NORMAL))
+
                 self.capital_gains(tax_year)
                 if not config.args.summary:
                     self.income(tax_year)
@@ -153,7 +173,8 @@ class ReportLog(object):
 
         print("%sCapital Gains" % Fore.CYAN)
         header = "%s %-10s %-28s %25s %13s %13s %13s %13s" % ('Asset'.ljust(self.MAX_SYMBOL_LEN),
-                                                              'Date',
+                                                              'Date Acquired'
+                                                              'Date Disposed',
                                                               'Disposal Type',
                                                               'Quantity',
                                                               'Cost',
@@ -173,6 +194,7 @@ class ReportLog(object):
                 print("%s%s %-10s %-28s %25s %13s %13s %13s %s%13s" % (
                     Fore.WHITE,
                     te.asset.ljust(self.MAX_SYMBOL_LEN),
+                    self.format_date(te.acq_date),
                     self.format_date(te.date),
                     te.format_disposal(),
                     self.format_quantity(te.quantity),
@@ -289,7 +311,7 @@ class ReportLog(object):
                 print("%s%s %-10s %-10s %-40s %-25s %13s %13s" % (
                     Fore.WHITE,
                     te.asset.ljust(self.MAX_SYMBOL_LEN),
-                    self.format_date(te.date),
+                    self.format_date(te.buy_date),
                     te.type,
                     te.note,
                     self.format_quantity(te.quantity),
@@ -338,7 +360,11 @@ class ReportLog(object):
             Style.NORMAL))
 
     def price_data(self, tax_year):
-        print("%sPrice Data - %d/%d\n" % (Fore.CYAN, tax_year - 1, tax_year))
+        if has_multi_year_tax_year():
+            print("\n%sPrice Data - %d/%d\n" % (Fore.CYAN, tax_year - 1, tax_year))
+        else:
+            print("\n%sPrice Data - %d\n" % (Fore.CYAN, tax_year))
+
         print("%s%s %-16s %-10s  %13s %25s" % (
             Fore.YELLOW,
             'Asset'.ljust(self.ASSET_WIDTH+2),
@@ -420,9 +446,9 @@ class ReportLog(object):
     @staticmethod
     def format_date(date):
         if isinstance(date, datetime):
-            return date.strftime('%d/%m/%Y')
+            return date.strftime(config.DATE_FORMAT)
         else:
-            return dateutil.parser.parse(date).strftime('%d/%m/%Y')
+            return dateutil.parser.parse(date).strftime(config.DATE_FORMAT)
 
     @staticmethod
     def format_quantity(quantity):

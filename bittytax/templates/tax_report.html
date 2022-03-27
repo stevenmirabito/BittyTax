@@ -59,7 +59,11 @@
                 <div><pdf:nextpage /></div>
             {% endif %}
             {% set tax_year = config.args.taxyear %}
-            <h1>Tax Year - {{tax_year - 1}}/{{tax_year}}</h1>
+            {% if has_multi_year_tax_year %}
+                <h1>Tax Year - {{tax_year - 1}}/{{tax_year}}</h1>
+            {% else %}
+                <h1>Tax Year - {{tax_year}}</h1>
+            {% endif %}
             {% include "capital_gains.html" %}
             {% if not config.args.summary %}
                 {% include "income.html" %}
@@ -74,7 +78,11 @@
                 <div><pdf:nextpage /></div>
             {% endif %}
             {% for tax_year in tax_report|sort %}
-                <h1>Tax Year - {{tax_year - 1}}/{{tax_year}}</h1>
+                {% if has_multi_year_tax_year %}
+                    <h1>Tax Year - {{tax_year - 1}}/{{tax_year}}</h1>
+                {% else %}
+                    <h1>Tax Year - {{tax_year}}</h1>
+                {% endif %}
                 {% include "capital_gains.html" %}
                 {% if not config.args.summary %}
                     {% include "income.html" %}

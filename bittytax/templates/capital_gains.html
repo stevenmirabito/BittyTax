@@ -5,8 +5,9 @@
     <table repeat="1" width="100%">
         <tr>
             <th align="left">Asset</th>
-            <th align="left">Date</th>
-            <th align="left">Disposal Type</th>
+            <th align="left">Buy Date</th>
+            <th align="left">Sell Date</th>
+            <th align="left" width="20%">Disposal Type</th>
             <th align="right">Quantity</th>
             <th align="right">Cost</th>
             <th align="right">Fees</th>
@@ -17,8 +18,9 @@
             {% set asset_totals.disposals = asset_totals.disposals + 1 %}
             <tr>
                 <td>{{te.asset}}</td>
+                <td>{{te.acq_date|datefilter}}</td>
                 <td>{{te.date|datefilter}}</td>
-                <td width="25%">{{te.format_disposal()|nowrapfilter}}</td>
+                <td>{{te.format_disposal()|nowrapfilter}}</td>
                 <td align="right">{{te.quantity|quantityfilter}}</td>
                 {% set asset_totals.quantity = asset_totals.quantity + te.quantity %}
                 <td align="right">{{te.cost|valuefilter}}</td>
@@ -40,6 +42,7 @@
                 <td align="left">Total</td>
                 <td align="left"></td>
                 <td align="left"></td>
+                <td align="left"></td>
                 <td align="right">{{asset_totals.quantity|quantityfilter}}</td>
                 <td align="right">{{asset_totals.cost|valuefilter}}</td>
                 <td align="right">{{asset_totals.fees|valuefilter}}</td>
@@ -58,7 +61,8 @@
     <tr class="total_row">
         <td align="left">Total</td>
         <td align="left"></td>
-        <td align="left" width="25%"></td>
+        <td align="left"></td>
+        <td align="left" width="20%"></td>
         <td align="right"></td>
         <td align="right">{{cgains.totals['cost']|valuefilter}}</td>
         <td align="right">{{cgains.totals['fees']|valuefilter}}</td>

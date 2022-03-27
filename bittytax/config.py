@@ -3,6 +3,7 @@
 
 import os
 import pkg_resources
+from decimal import Decimal
 
 from colorama import Fore, Back
 import yaml
@@ -10,12 +11,23 @@ import dateutil.tz
 
 from .version import __version__
 
+class Currency(object):
+    US = 'USD'
+    GB = 'GBP'
+
+CURRENCY_SYMBOLS = {
+    Currency.GB: u'\xA3',  # £
+    Currency.US: u'\x24'   # $
+}
+
 class Config(object):
-    TZ_INFOS = {'BST': dateutil.tz.gettz('Europe/London'),
+    TZ_INFOS = {'PDT': dateutil.tz.gettz('America/Los_Angeles'),
                 'GMT': dateutil.tz.gettz('Europe/London')}
-    TZ_LOCAL = dateutil.tz.gettz('Europe/London')
+    TZ_LOCAL = dateutil.tz.gettz('America/Los_Angeles')
     TZ_UTC = dateutil.tz.UTC
-    CCY = 'GBP'
+    DATE_FORMAT = '%m/%d/%Y'
+    PRECISION = Decimal('0.00')
+    CCY = 'USD'
 
     BITTYTAX_PATH = os.path.expanduser('~/.bittytax')
     BITTYTAX_CONFIG = 'bittytax.conf'
@@ -93,8 +105,11 @@ class Config(object):
             print("%sconfig: %s = %s" % (Fore.GREEN, name, self.config[name]))
 
     def sym(self):
-        if self.CCY == 'GBP':
-            return u'\xA3' # £
-        raise ValueError("Currency not supported")
+        symbol = CURRENCY_SYMBOLS[self.CCY]
+
+        if not symbol:
+            raise ValueError("Currency not supported")
+
+        return symbol
 
 config = Config()
