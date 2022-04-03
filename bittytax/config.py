@@ -46,6 +46,7 @@ class Config(object):
     DATA_SOURCE_CRYPTO = ['CryptoCompare', 'CoinGecko']
 
     DEFAULT_CONFIG = {
+        'date_format': '%d/%m/%Y',
         'local_currency': 'GBP',
         'fiat_list': FIAT_LIST,
         'crypto_list': CRYPTO_LIST,
