@@ -19,6 +19,8 @@ from .datafile import DataFile
 from .datamerge import DataMerge
 from .output_csv import OutputCsv
 from .output_excel import OutputExcel
+from .parsers import *
+from .mergers import *
 from .exceptions import UnknownCryptoassetError, UnknownUsernameError, DataFilenameError, \
                         DataFormatUnrecognised
 
