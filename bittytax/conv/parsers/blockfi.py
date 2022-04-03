@@ -88,3 +88,10 @@ DataParser(DataParser.TYPE_SAVINGS,
             'Rate Amount', 'Rate Currency', 'Type'],
            worksheet_name="BlockFi T",
            row_handler=parse_blockfi_trades)
+
+DataParser(DataParser.TYPE_SAVINGS,
+           "BlockFi Trades",
+           ['Trade ID', 'Date', 'Buy Quantity', 'Buy Currency', 'Sold Quantity', 'Sold Currency',
+            'Rate Amount', 'Rate Currency', 'Type', 'Frequency'],
+           worksheet_name="BlockFi T",
+           row_handler=parse_blockfi_trades)
