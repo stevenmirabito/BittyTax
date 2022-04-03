@@ -7,6 +7,7 @@ from .base import (
     CalculateIncome,
     TaxRule,
 )
+from .us import TaxCalculatorUS
 from .uk import TaxCalculatorUK
 
 __all__ = [
@@ -17,5 +18,6 @@ __all__ = [
     'CalculateCapitalGains',
     'CalculateIncome',
     'TaxRule',
+    'TaxCalculatorUS',
     'TaxCalculatorUK',
 ]

@@ -20,7 +20,7 @@ from .transactions import TransactionHistory
 from .audit import AuditRecords
 from .price.valueasset import ValueAsset
 from .price.exceptions import DataSourceError
-from .tax import TaxCalculatorUK, CalculateCapitalGains as CCG
+from .tax import TaxCalculatorUK, TaxCalculatorUS, CalculateCapitalGains as CCG
 from .report import ReportLog, ReportPdf
 from .exceptions import ImportFailureError
 
@@ -55,8 +55,12 @@ def main():
                             min(CCG.CG_DATA_INDIVIDUAL),
                             max(CCG.CG_DATA_INDIVIDUAL)))
     parser.add_argument('--taxrules',
-                        choices=[config.TAX_RULES_UK_INDIVIDUAL] + config.TAX_RULES_UK_COMPANY,
-                        metavar='{UK_INDIVIDUAL, UK_COMPANY_XXX} '
+                        choices=[
+                            config.TAX_RULES_US_INDIVIDUAL,
+                            config.TAX_RULES_UK_INDIVIDUAL,
+                            *config.TAX_RULES_UK_COMPANY,
+                        ],
+                        metavar='{US_INDIVIDUAL, UK_INDIVIDUAL, UK_COMPANY_XXX} '
                                 'where XXX is the month which starts the financial year, '
                                 'i.e. JAN, FEB, etc.',
                         default=config.TAX_RULES_UK_INDIVIDUAL,
@@ -90,7 +94,10 @@ def main():
         print("%ssystem: %s, release: %s" % (Fore.GREEN, platform.system(), platform.release()))
         config.output_config()
 
-    if args.tax_rules in config.TAX_RULES_UK_COMPANY:
+    if args.tax_rules == config.TAX_RULES_US_INDIVIDUAL:
+        config.start_of_year_month = 1
+        config.start_of_year_day = 1
+    elif args.tax_rules in config.TAX_RULES_UK_COMPANY:
         config.start_of_year_month = config.TAX_RULES_UK_COMPANY.index(args.tax_rules) + 1
         config.start_of_year_day = 1
 
@@ -180,8 +187,14 @@ def do_tax(transaction_records, tax_rules, skip_integrity_check):
     value_asset = ValueAsset()
     transaction_history = TransactionHistory(transaction_records, value_asset)
 
-    tax = TaxCalculatorUK(transaction_history.transactions, tax_rules)
-    tax.calculate(skip_integrity_check)
+    if tax_rules == config.TAX_RULES_US_INDIVIDUAL:
+        tax = TaxCalculatorUS(transaction_history.transactions, tax_rules)
+        tax.calculate(skip_integrity_check)
+    elif tax_rules == config.TAX_RULES_UK_INDIVIDUAL or tax_rules in config.TAX_RULES_UK_COMPANY:
+        tax = TaxCalculatorUK(transaction_history.transactions, tax_rules)
+        tax.calculate(skip_integrity_check)
+    else:
+        raise ValueError('Unsupported tax rules')
 
     return tax, value_asset
 
