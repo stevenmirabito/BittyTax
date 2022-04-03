@@ -24,20 +24,20 @@ def parse_celsius(data_row, parser, **kwargs):
                              Back.YELLOW+Fore.BLACK, Back.RESET+Fore.YELLOW))
         return
 
-    if row_dict['Transaction type'] in ("deposit", "inbound_transfer"):
+    if row_dict['Transaction type'] in ("deposit", "inbound_transfer", "Transfer"):
         data_row.t_record = TransactionOutRecord(TransactionOutRecord.TYPE_DEPOSIT,
                                                  data_row.timestamp,
                                                  buy_quantity=row_dict['Coin amount'],
                                                  buy_asset=row_dict['Coin type'],
                                                  wallet=WALLET)
-    elif row_dict['Transaction type'] in ("withdrawal", "outbound_transfer"):
+    elif row_dict['Transaction type'] in ("withdrawal", "outbound_transfer", "Withdrawal"):
         data_row.t_record = TransactionOutRecord(TransactionOutRecord.TYPE_WITHDRAWAL,
                                                  data_row.timestamp,
                                                  sell_quantity=abs(
                                                      Decimal(row_dict['Coin amount'])),
                                                  sell_asset=row_dict['Coin type'],
                                                  wallet=WALLET)
-    elif row_dict['Transaction type'] == "interest":
+    elif row_dict['Transaction type'] in ("interest", "Reward"):
         data_row.t_record = TransactionOutRecord(TransactionOutRecord.TYPE_INTEREST,
                                                  data_row.timestamp,
                                                  buy_quantity=row_dict['Coin amount'],
@@ -48,7 +48,7 @@ def parse_celsius(data_row, parser, **kwargs):
                                                      data_row.timestamp),
                                                  wallet=WALLET)
     elif row_dict['Transaction type'] in ("promo_code_reward", "referred_award", "referrer_award",
-                                          "bonus_token"):
+                                          "bonus_token", "Promo Code Reward", "Referrer Award"):
         data_row.t_record = TransactionOutRecord(TransactionOutRecord.TYPE_GIFT_RECEIVED,
                                                  data_row.timestamp,
                                                  buy_quantity=row_dict['Coin amount'],
@@ -66,5 +66,12 @@ DataParser(DataParser.TYPE_SAVINGS,
            "Celsius",
            ['Internal id', 'Date and time', 'Transaction type', 'Coin type', 'Coin amount',
             'USD Value', 'Original Interest Coin', 'Interest Amount In Original Coin', 'Confirmed'],
+           worksheet_name="Celsius",
+           row_handler=parse_celsius)
+
+DataParser(DataParser.TYPE_SAVINGS,
+           "Celsius",
+           ['Internal id', 'Date and time', 'Transaction type', 'Coin type', 'Coin amount',
+            'USD Value', 'Original Reward Coin', 'Reward Amount In Original Coin', 'Confirmed'],
            worksheet_name="Celsius",
            row_handler=parse_celsius)
