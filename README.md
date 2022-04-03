@@ -666,6 +666,7 @@ For most wallet files, transactions can only be categorised as deposits or withd
 **Savings & Loans**
 - BlockFi
 - Celsius
+- Ledn
 - Nexo
 
 **Explorers:**

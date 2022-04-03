@@ -40,6 +40,7 @@ from . import koinly
 from . import kraken
 from . import kucoin
 from . import ledgerlive
+from . import ledn
 from . import liquid
 from . import mercatox
 from . import nault
