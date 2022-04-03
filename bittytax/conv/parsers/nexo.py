@@ -24,7 +24,9 @@ def parse_nexo(data_row, parser, **_kwargs):
         # Skip failed transactions
         return
 
-    asset = row_dict['Currency']
+    asset = row_dict['Input Currency'] if 'Input Currency' in row_dict else row_dict['Currency']
+    amount = row_dict['Input Amount'] if 'Input Amount' in row_dict else row_dict['Amount']
+
     for local_asset in ASSET_NORMALISE:
         asset = asset.replace(local_asset, ASSET_NORMALISE[local_asset])
 
@@ -37,15 +39,15 @@ def parse_nexo(data_row, parser, **_kwargs):
     if row_dict['Type'] in ("Deposit", "ExchangeDepositedOn"):
         data_row.t_record = TransactionOutRecord(TransactionOutRecord.TYPE_DEPOSIT,
                                                  data_row.timestamp,
-                                                 buy_quantity=row_dict['Amount'],
+                                                 buy_quantity=amount,
                                                  buy_asset=asset,
                                                  buy_value=value,
                                                  wallet=WALLET)
     elif row_dict['Type'] in ("Interest", "FixedTermInterest", "InterestAdditional"):
-        if Decimal(row_dict['Amount']) > 0:
+        if Decimal(amount) > 0:
             data_row.t_record = TransactionOutRecord(TransactionOutRecord.TYPE_INTEREST,
                                                      data_row.timestamp,
-                                                     buy_quantity=row_dict['Amount'],
+                                                     buy_quantity=amount,
                                                      buy_asset=asset,
                                                      buy_value=value,
                                                      wallet=WALLET)
@@ -55,20 +57,20 @@ def parse_nexo(data_row, parser, **_kwargs):
     elif row_dict['Type'] == "Dividend":
         data_row.t_record = TransactionOutRecord(TransactionOutRecord.TYPE_DIVIDEND,
                                                  data_row.timestamp,
-                                                 buy_quantity=row_dict['Amount'],
+                                                 buy_quantity=amount,
                                                  buy_asset=asset,
                                                  buy_value=value,
                                                  wallet=WALLET)
     elif row_dict['Type'] == "Bonus":
         data_row.t_record = TransactionOutRecord(TransactionOutRecord.TYPE_GIFT_RECEIVED,
                                                  data_row.timestamp,
-                                                 buy_quantity=row_dict['Amount'],
+                                                 buy_quantity=amount,
                                                  buy_asset=asset,
                                                  buy_value=value,
                                                  wallet=WALLET)
 
     elif row_dict['Type'] == "Exchange":
-        match = re.match(r'^-(\d+|\d+\.\d+) / \+(\d+|\d+\.\d+)$', row_dict['Amount'])
+        match = re.match(r'^-(\d+|\d+\.\d+) / \+(\d+|\d+\.\d+)$', amount)
         buy_quantity = None
         sell_quantity = None
 
@@ -88,7 +90,7 @@ def parse_nexo(data_row, parser, **_kwargs):
     elif row_dict['Type'] in ("Withdrawal", "WithdrawExchanged"):
         data_row.t_record = TransactionOutRecord(TransactionOutRecord.TYPE_WITHDRAWAL,
                                                  data_row.timestamp,
-                                                 sell_quantity=abs(Decimal(row_dict['Amount'])),
+                                                 sell_quantity=abs(Decimal(amount)),
                                                  sell_asset=asset,
                                                  sell_value=value,
                                                  wallet=WALLET)
@@ -96,7 +98,7 @@ def parse_nexo(data_row, parser, **_kwargs):
         # Repayment of loan
         data_row.t_record = TransactionOutRecord(TransactionOutRecord.TYPE_SPEND,
                                                  data_row.timestamp,
-                                                 sell_quantity=abs(Decimal(row_dict['Amount'])),
+                                                 sell_quantity=abs(Decimal(amount)),
                                                  sell_asset=asset,
                                                  sell_value=value,
                                                  wallet=WALLET)
@@ -110,6 +112,13 @@ def parse_nexo(data_row, parser, **_kwargs):
         return
     else:
         raise UnexpectedTypeError(parser.in_header.index('Type'), 'Type', row_dict['Type'])
+
+DataParser(DataParser.TYPE_SAVINGS,
+           "Nexo",
+           ['Transaction', 'Type', 'Input Currency', 'Input Amount', 'Output Currency',
+            'Output Amount', 'USD Equivalent', 'Details', 'Outstanding Loan', 'Date / Time'],
+           worksheet_name="Nexo",
+           row_handler=parse_nexo)
 
 DataParser(DataParser.TYPE_SAVINGS,
            "Nexo",
