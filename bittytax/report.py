@@ -57,8 +57,8 @@ class ReportPdf(object):
     @staticmethod
     def datefilter(date):
         if isinstance(date, datetime):
-            return date.strftime('%d/%m/%Y')
-        return dateutil.parser.parse(date).strftime('%d/%m/%Y')
+            return date.strftime(config.date_format)
+        return dateutil.parser.parse(date).strftime(config.date_format)
 
     @staticmethod
     def datefilter2(date):
@@ -491,8 +491,8 @@ class ReportLog(object):
     @staticmethod
     def format_date(date):
         if isinstance(date, datetime):
-            return date.strftime('%d/%m/%Y')
-        return dateutil.parser.parse(date).strftime('%d/%m/%Y')
+            return date.strftime(config.date_format)
+        return dateutil.parser.parse(date).strftime(config.date_format)
 
     @staticmethod
     def format_date2(date):
