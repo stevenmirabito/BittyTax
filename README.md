@@ -650,6 +650,7 @@ For most wallet files, transactions can only be categorised as deposits or withd
 - Cryptopia
 - Cryptsy
 - Gatehub
+- Gemini
 - Gravity (Bitstocks)
 - HitBTC
 - Hotbit

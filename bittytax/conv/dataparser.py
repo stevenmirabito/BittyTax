@@ -23,6 +23,8 @@ class DataParser(object):
     TYPE_SHARES = 'Stocks & Shares'
     TYPE_GENERIC = 'Generic'
 
+    HEADER_WILDCARD = '***'
+
     LIST_ORDER = (TYPE_WALLET, TYPE_EXCHANGE, TYPE_SAVINGS, TYPE_EXPLORER, TYPE_ACCOUNTING,
                   TYPE_SHARES)
 
@@ -128,16 +130,42 @@ class DataParser(object):
             sys.stderr.write("%sheader: row[%s] TRY: %s\n" % (
                 Fore.YELLOW, row_num+1, cls.format_row(row)))
 
-        parsers_reduced = [p for p in cls.parsers if len(p.header) == len(row)]
-        for parser in parsers_reduced:
-            match = False
-            for i, row_field in enumerate(row):
-                if callable(parser.header[i]):
-                    match = parser.header[i](row_field)
-                    parser.args.append(match)
-                elif parser.header[i] is not None:
-                    match = row_field == parser.header[i]
+        parsers_reduced = [
+            p for p in cls.parsers
+            if len(p.header) == len(row) or DataParser.HEADER_WILDCARD in p.header
+        ]
 
+        def match_col(value, expected):
+            if expected is None:
+                return True
+            elif callable(expected):
+                matched = expected(value)
+                if matched:
+                    parser.args.append(matched)
+                    return True
+            elif value is not None:
+                return expected == value
+
+            return False
+
+        for parser in parsers_reduced:
+            header_idx = 0
+            row_idx = 0
+            match = False
+            while row_idx < len(row):
+                if parser.header[header_idx] == DataParser.HEADER_WILDCARD:
+                    header_idx += 1
+                    next_col = parser.header[header_idx]
+                    while row_idx < len(row):
+                        match = match_col(row[row_idx], next_col)
+                        if match:
+                            break
+                        row_idx += 1
+                else:
+                    match = match_col(row[row_idx], parser.header[header_idx])
+
+                row_idx += 1
+                header_idx += 1
                 if not match:
                     break
 
