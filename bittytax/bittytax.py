@@ -20,7 +20,7 @@ from .transactions import TransactionHistory
 from .audit import AuditRecords
 from .price.valueasset import ValueAsset
 from .price.exceptions import DataSourceError
-from .tax import TaxCalculator, CalculateCapitalGains as CCG
+from .tax import TaxCalculatorUK, CalculateCapitalGains as CCG
 from .report import ReportLog, ReportPdf
 from .exceptions import ImportFailureError
 
@@ -180,16 +180,9 @@ def do_tax(transaction_records, tax_rules, skip_integrity_check):
     value_asset = ValueAsset()
     transaction_history = TransactionHistory(transaction_records, value_asset)
 
-    tax = TaxCalculator(transaction_history.transactions, tax_rules)
-    tax.pool_same_day()
-    tax.match_sell(tax.DISPOSAL_SAME_DAY)
+    tax = TaxCalculatorUK(transaction_history.transactions, tax_rules)
+    tax.calculate(skip_integrity_check)
 
-    if tax_rules == config.TAX_RULES_UK_INDIVIDUAL:
-        tax.match_buyback(tax.DISPOSAL_BED_AND_BREAKFAST)
-    elif tax_rules in config.TAX_RULES_UK_COMPANY:
-        tax.match_sell(tax.DISPOSAL_TEN_DAY)
-
-    tax.process_section104(skip_integrity_check)
     return tax, value_asset
 
 def do_integrity_check(audit, holdings):

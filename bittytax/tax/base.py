@@ -2,24 +2,20 @@
 # (c) Nano Nano Ltd 2019
 
 import sys
-import copy
+from abc import ABC, abstractmethod
 from decimal import Decimal
 from datetime import datetime, timedelta
 
 from colorama import Fore
 from tqdm import tqdm
 
-from .config import config
-from .transactions import Buy, Sell
-from .holdings import Holdings
+from ..config import config
+from ..transactions import Buy, Sell
+from ..holdings import Holdings
 
 PRECISION = Decimal('0.00')
 
-class TaxCalculator(object):
-    DISPOSAL_SAME_DAY = 'Same Day'
-    DISPOSAL_TEN_DAY = 'Ten Day'
-    DISPOSAL_BED_AND_BREAKFAST = 'Bed & Breakfast'
-    DISPOSAL_SECTION_104 = 'Section 104'
+class TaxCalculator(ABC):
     DISPOSAL_NO_GAIN_NO_LOSS = 'No Gain/No Loss'
 
     TRANSFER_TYPES = (Buy.TYPE_DEPOSIT, Sell.TYPE_WITHDRAWAL)
@@ -27,10 +23,7 @@ class TaxCalculator(object):
     INCOME_TYPES = (Buy.TYPE_MINING, Buy.TYPE_STAKING, Buy.TYPE_DIVIDEND, Buy.TYPE_INTEREST,
                     Buy.TYPE_INCOME)
 
-    NO_GAIN_NO_LOSS_TYPES = (Sell.TYPE_GIFT_SPOUSE, Sell.TYPE_CHARITY_SENT)
-
-    # These transactions are except from the "same day" & "bnb" rule
-    NO_MATCH_TYPES = (Sell.TYPE_GIFT_SPOUSE, Sell.TYPE_CHARITY_SENT, Sell.TYPE_LOST)
+    NO_GAIN_NO_LOSS_TYPES = (Sell.TYPE_CHARITY_SENT,)
 
     def __init__(self, transactions, tax_rules):
         self.transactions = transactions
@@ -45,45 +38,9 @@ class TaxCalculator(object):
         self.tax_report = {}
         self.holdings_report = {}
 
-    def pool_same_day(self):
-        transactions = copy.deepcopy(self.transactions)
-        buy_transactions = {}
-        sell_transactions = {}
-
-        if config.debug:
-            print("%spool same day transactions" % Fore.CYAN)
-
-        for t in tqdm(transactions,
-                      unit='t',
-                      desc="%spool same day%s" % (Fore.CYAN, Fore.GREEN),
-                      disable=bool(config.debug or not sys.stdout.isatty())):
-            if isinstance(t, Buy) and t.is_crypto() and t.acquisition and \
-                    t.t_type not in self.NO_MATCH_TYPES:
-                if (t.asset, t.timestamp.date()) not in buy_transactions:
-                    buy_transactions[(t.asset, t.timestamp.date())] = t
-                else:
-                    buy_transactions[(t.asset, t.timestamp.date())] += t
-            elif isinstance(t, Sell) and t.is_crypto() and t.disposal and \
-                    t.t_type not in self.NO_MATCH_TYPES:
-                if (t.asset, t.timestamp.date()) not in sell_transactions:
-                    sell_transactions[(t.asset, t.timestamp.date())] = t
-                else:
-                    sell_transactions[(t.asset, t.timestamp.date())] += t
-            else:
-                self.other_transactions.append(t)
-
-        self.buys_ordered = sorted(buy_transactions.values())
-        self.sells_ordered = sorted(sell_transactions.values())
-
-        if config.debug:
-            for t in sorted(self.all_transactions()):
-                if len(t.pooled) > 1:
-                    print("%spool: %s" % (Fore.GREEN, t.__str__(pooled_bold=True)))
-                    for tp in t.pooled:
-                        print("%spool:   (%s)" % (Fore.BLUE, tp))
-
-        if config.debug:
-            print("%spool: total transactions=%d" % (Fore.CYAN, len(self.all_transactions())))
+    @abstractmethod
+    def calculate(self):
+        raise NotImplementedError('Implement in subclass')
 
     def match_buyback(self, rule):
         sell_index = buy_index = 0
@@ -91,20 +48,22 @@ class TaxCalculator(object):
         if not self.buys_ordered:
             return
 
+        if not isinstance(rule, TaxRule):
+            raise ValueError('Rule must be an instance of TaxRule')
+
         if config.debug:
-            print("%smatch %s transactions" % (Fore.CYAN, rule.lower()))
+            print("%smatch %s transactions" % (Fore.CYAN, rule.name.lower()))
 
         pbar = tqdm(total=len(self.sells_ordered),
                     unit='t',
-                    desc="%smatch %s transactions%s" % (Fore.CYAN, rule.lower(), Fore.GREEN),
+                    desc="%smatch %s transactions%s" % (Fore.CYAN, rule.name.lower(), Fore.GREEN),
                     disable=bool(config.debug or not sys.stdout.isatty()))
 
         while sell_index < len(self.sells_ordered):
             s = self.sells_ordered[sell_index]
             b = self.buys_ordered[buy_index]
 
-            if (not s.matched and not b.matched and s.asset == b.asset and
-                    self._rule_match(b.timestamp, s.timestamp, rule)):
+            if not s.matched and not b.matched and s.asset == b.asset and rule.match(s, b):
                 if config.debug:
                     if b.quantity > s.quantity:
                         print("%smatch: %s" % (Fore.GREEN, s.__str__(quantity_bold=True)))
@@ -131,7 +90,7 @@ class TaxCalculator(object):
                     pbar.total += 1
 
                 s.matched = b.matched = True
-                tax_event = TaxEventCapitalGains(rule, b, s, b.cost,
+                tax_event = TaxEventCapitalGains(rule.name, b, s, b.cost,
                                                  (b.fee_value or Decimal(0)) +
                                                  (s.fee_value or Decimal(0)))
                 self.tax_events[self.which_tax_year(tax_event.date)].append(tax_event)
@@ -160,20 +119,22 @@ class TaxCalculator(object):
         if not self.sells_ordered:
             return
 
+        if not isinstance(rule, TaxRule):
+            raise ValueError('Rule must be an instance of TaxRule')
+
         if config.debug:
-            print("%smatch %s transactions" % (Fore.CYAN, rule.lower()))
+            print("%smatch %s transactions" % (Fore.CYAN, rule.name.lower()))
 
         pbar = tqdm(total=len(self.buys_ordered),
                     unit='t',
-                    desc="%smatch %s transactions%s" % (Fore.CYAN, rule.lower(), Fore.GREEN),
+                    desc="%smatch %s transactions%s" % (Fore.CYAN, rule.name.lower(), Fore.GREEN),
                     disable=bool(config.debug or not sys.stdout.isatty()))
 
         while buy_index < len(self.buys_ordered):
             b = self.buys_ordered[buy_index]
             s = self.sells_ordered[sell_index]
 
-            if (not b.matched and not s.matched and b.asset == s.asset and
-                    self._rule_match(b.timestamp, s.timestamp, rule)):
+            if not b.matched and not s.matched and b.asset == s.asset and rule.match(s, b):
                 if config.debug:
                     if b.quantity > s.quantity:
                         print("%smatch: %s" % (Fore.GREEN, b))
@@ -200,7 +161,7 @@ class TaxCalculator(object):
                         print("%smatch:   split: %s" % (Fore.YELLOW, s_remainder))
 
                 b.matched = s.matched = True
-                tax_event = TaxEventCapitalGains(rule, b, s, b.cost,
+                tax_event = TaxEventCapitalGains(rule.name, b, s, b.cost,
                                                  (b.fee_value or Decimal(0)) +
                                                  (s.fee_value or Decimal(0)))
                 self.tax_events[self.which_tax_year(tax_event.date)].append(tax_event)
@@ -223,41 +184,25 @@ class TaxCalculator(object):
         if config.debug:
             print("%smatch: total transactions=%d" % (Fore.CYAN, len(self.all_transactions())))
 
-    def _rule_match(self, b_timestamp, s_timestamp, rule):
-        if rule == self.DISPOSAL_SAME_DAY:
-            return b_timestamp.date() == s_timestamp.date()
-        if rule == self.DISPOSAL_TEN_DAY:
-            # 10 days between buy and sell
-            return (b_timestamp.date() < s_timestamp.date() and
-                    s_timestamp.date() <= b_timestamp.date() + timedelta(days=10))
-        if rule == self.DISPOSAL_BED_AND_BREAKFAST:
-            # 30 days between sell and buy-back
-            return (s_timestamp.date() < b_timestamp.date() and
-                    b_timestamp.date() <= s_timestamp.date() + timedelta(days=30))
-        if not rule:
-            return True
-
-        raise Exception
-
-    def process_section104(self, skip_integrity_check):
+    def process_holdings(self, skip_integrity_check):
         if config.debug:
-            print("%sprocess section 104" % Fore.CYAN)
+            print("%sprocess holdings" % Fore.CYAN)
 
         for t in tqdm(sorted(self.all_transactions()),
                       unit='t',
-                      desc="%sprocess section 104%s" % (Fore.CYAN, Fore.GREEN),
+                      desc="%sprocess holdings%s" % (Fore.CYAN, Fore.GREEN),
                       disable=bool(config.debug or not sys.stdout.isatty())):
             if t.is_crypto() and t.asset not in self.holdings:
                 self.holdings[t.asset] = Holdings(t.asset)
 
             if t.matched:
                 if config.debug:
-                    print("%ssection104: //%s <- matched" % (Fore.BLUE, t))
+                    print("%sholdings: //%s <- matched" % (Fore.BLUE, t))
                 continue
 
             if not config.transfers_include and t.t_type in self.TRANSFER_TYPES:
                 if config.debug:
-                    print("%ssection104: //%s <- transfer" % (Fore.BLUE, t))
+                    print("%sholdings: //%s <- transfer" % (Fore.BLUE, t))
                 continue
 
             if not t.is_crypto():
@@ -266,7 +211,7 @@ class TaxCalculator(object):
                 continue
 
             if config.debug:
-                print("%ssection104: %s" % (Fore.GREEN, t))
+                print("%sholdings: %s" % (Fore.GREEN, t))
 
             if isinstance(t, Buy):
                 self._add_tokens(t)
@@ -300,23 +245,13 @@ class TaxCalculator(object):
                                                t.t_type == Sell.TYPE_WITHDRAWAL)
 
         if t.disposal:
-            if t.t_type in self.NO_GAIN_NO_LOSS_TYPES:
-                # Change proceeds to make sure it balances
-                t.proceeds = cost.quantize(PRECISION) + (fees + (t.fee_value or
-                                                                 Decimal(0))).quantize(PRECISION)
-                t.proceeds_fixed = True
-                tax_event = TaxEventCapitalGains(self.DISPOSAL_NO_GAIN_NO_LOSS,
-                                                 None, t, cost, fees + (t.fee_value or Decimal(0)))
-            else:
-                tax_event = TaxEventCapitalGains(self.DISPOSAL_SECTION_104,
-                                                 None, t, cost, fees + (t.fee_value or Decimal(0)))
-
-            self.tax_events[self.which_tax_year(tax_event.date)].append(tax_event)
-            if config.debug:
-                print("%ssection104:   %s" % (Fore.CYAN, tax_event))
-
+            self.process_disposal(t, cost, fees)
             if config.transfers_include and not skip_integrity_check:
                 self.holdings[t.asset].check_transfer_mismatch()
+
+    @abstractmethod
+    def process_disposal(self, t, cost, fees):
+        raise NotImplementedError('Implement in subclass')
 
     def process_income(self):
         if config.debug:
@@ -433,9 +368,8 @@ class TaxEventCapitalGains(TaxEvent):
         self.acquisition_date = b.timestamp if b else None
 
     def format_disposal(self):
-        if self.disposal_type in (TaxCalculator.DISPOSAL_BED_AND_BREAKFAST,
-                                  TaxCalculator.DISPOSAL_TEN_DAY):
-            return "%s (%s)" % (self.disposal_type, self.acquisition_date.strftime('%d/%m/%Y'))
+        if self.disposal_type != TaxCalculator.DISPOSAL_NO_GAIN_NO_LOSS:
+            return "%s (%s)" % (self.disposal_type, self.acquisition_date.strftime(config.date_format))
 
         return self.disposal_type
 
@@ -622,3 +556,14 @@ class CalculateIncome(object):
                 else:
                     self.type_totals[income_type]['amount'] += te.amount
                     self.type_totals[income_type]['fees'] += te.fees
+
+class TaxRule(object):
+    def __init__(self, name, matcher):
+        if not callable(matcher):
+            raise ValueError("Matcher must be a function")
+
+        self.name = name
+        self.matcher = matcher
+
+    def match(self, sell, buy):
+        return self.matcher(sell, buy)
