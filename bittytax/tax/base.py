@@ -497,6 +497,9 @@ class CalculateCapitalGains(object):
         2020: {"allowance": 12000, "basic_rate": 10, "higher_rate": 20},
         2021: {"allowance": 12300, "basic_rate": 10, "higher_rate": 20},
         2022: {"allowance": 12300, "basic_rate": 10, "higher_rate": 20},
+        2023: {"allowance": 12300, "basic_rate": 10, "higher_rate": 20},
+        2024: {"allowance": 6000, "basic_rate": 10, "higher_rate": 20},
+        2025: {"allowance": 3000, "basic_rate": 10, "higher_rate": 20},
     }
 
     # Rate changes start from 1st April
@@ -514,6 +517,9 @@ class CalculateCapitalGains(object):
         2019: {"small_rate": None, "main_rate": 19},
         2020: {"small_rate": None, "main_rate": 19},
         2021: {"small_rate": None, "main_rate": 19},
+        2022: {"small_rate": None, "main_rate": 19},
+        2023: {"small_rate": 19, "main_rate": 25},
+        2024: {"small_rate": 19, "main_rate": 25},
     }
 
     def __init__(self, tax_year, tax_rules):
