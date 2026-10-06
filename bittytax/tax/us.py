@@ -19,6 +19,9 @@ PRECISION = Decimal('0.00')
 class TaxCalculatorUS(TaxCalculator):
     DISPOSAL_FIFO = 'First-In, First-Out'
 
+    INCOME_TYPES = (Buy.TYPE_MINING, Buy.TYPE_STAKING, Buy.TYPE_DIVIDEND, Buy.TYPE_INTEREST,
+                    Buy.TYPE_INCOME, Buy.TYPE_AIRDROP)
+
     def calculate(self, skip_integrity_check=False):
         self.prepare_transactions()
         self.match_sell(RULE_FIFO)
