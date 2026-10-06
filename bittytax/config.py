@@ -45,8 +45,9 @@ class Config(object):
 
     DATA_SOURCE_FIAT = ['BittyTaxAPI']
     # CryptoCompare and CoinDesk are no longer usable: CryptoCompare's coinlist endpoint now
-    #  requires an API key and CoinDesk's v1 API has been retired.
-    DATA_SOURCE_CRYPTO = ['CoinGecko']
+    #  requires an API key and CoinDesk's v1 API has been retired. YahooFinance is a fallback for
+    #  dates outside CoinGecko's keyless 365 day history window.
+    DATA_SOURCE_CRYPTO = ['CoinGecko', 'YahooFinance']
 
     DEFAULT_CONFIG = {
         'date_format': '%d/%m/%Y',

@@ -8,6 +8,8 @@ import platform
 from decimal import Decimal
 from datetime import datetime, timedelta
 
+from urllib.parse import quote
+
 from colorama import Fore, Back
 import dateutil.parser
 import requests
@@ -378,6 +380,90 @@ class CoinGecko(DataSourceBase):
                                    'price': Decimal(repr(p[1])) if p[1] else None,
                                    'url': url} for p in json_resp['prices']},
                                timestamp)
+
+class _YahooAssets(dict):
+    # Yahoo publishes no asset list, so every symbol is accepted and an unknown one is resolved
+    #  to a ticker built from the asset and quote when the price is requested.
+    def __contains__(self, symbol):
+        return True
+
+    def __missing__(self, symbol):
+        return {'id': None, 'name': symbol}
+
+
+class YahooFinance(DataSourceBase):
+    # The Yahoo Finance chart API needs no API key and returns the whole daily price history in a
+    #  single request (crypto back to 2014), so it can price dates outside CoinGecko's keyless
+    #  365 day window. It has no asset list and accepts any symbol, so it works best as a
+    #  fallback after a source that knows which assets it supports.
+    #
+    #  Tickers are derived from the asset and quote, crypto is 'BTC-GBP' or 'ETH-BTC' and fiat is
+    #  'EURGBP=X'. If Yahoo does not recognise the ticker no price is returned and the next data
+    #  source is tried.
+    LATEST_DAYS = 5
+    # Only used to populate 'bittytax_price list', any symbol can be priced
+    SYMBOLS = ['BTC', 'ETH', 'XRP', 'LTC', 'BCH', 'BNB', 'USDT', 'USDC', 'DOGE', 'ADA', 'SOL',
+               'DOT', 'LINK', 'XLM', 'TRX', 'ATOM', 'AVAX', 'ETC', 'XMR', 'ALGO', 'MATIC', 'DAI']
+
+    def __init__(self):
+        super(YahooFinance, self).__init__()
+        self.assets = _YahooAssets()
+        self.ids = {}
+
+    def get_config_assets(self):
+        # Every symbol is already accepted, so only an explicit ticker override is recorded
+        for symbol in config.data_source_select:
+            for data_source in config.data_source_select[symbol]:
+                prefix, _, ticker = data_source.partition(':')
+                if prefix.upper() == self.name().upper() and ticker:
+                    self.assets[symbol] = {'id': ticker, 'name': symbol}
+
+    def get_list(self):
+        return {symbol: [{'id': None, 'name': symbol}] for symbol in self.SYMBOLS}
+
+    @staticmethod
+    def build_ticker(asset, quote):
+        if asset in config.fiat_list:
+            return '%s%s=X' % (asset, quote)
+        return '%s-%s' % (asset, quote)
+
+    def ticker(self, asset, quote, asset_id=None):
+        return asset_id or self.assets[asset]['id'] or self.build_ticker(asset, quote)
+
+    def get_latest(self, asset, quote, asset_id=None):
+        now = int(datetime.now().timestamp())
+        json_resp = self.get_json(self.chart_url(self.ticker(asset, quote, asset_id),
+                                                 now - self.LATEST_DAYS * 86400, now))
+        result = self.chart_result(json_resp)
+        if result and 'regularMarketPrice' in result['meta']:
+            return Decimal(repr(result['meta']['regularMarketPrice']))
+
+        return None
+
+    def get_historical(self, asset, quote, timestamp, asset_id=None):
+        url = self.chart_url(self.ticker(asset, quote, asset_id), 0,
+                             int(datetime.now().timestamp()) + 86400)
+        result = self.chart_result(self.get_json(url))
+        if result and 'timestamp' in result:
+            self.update_prices(self.pair(asset, quote),
+                               {datetime.fromtimestamp(ts, config.TZ_UTC).strftime('%Y-%m-%d'): {
+                                   'price': Decimal(repr(close)), 'url': url}
+                                for ts, close in zip(result['timestamp'],
+                                                     result['indicators']['quote'][0]['close'])
+                                if close is not None},
+                               timestamp)
+
+    @staticmethod
+    def chart_url(ticker, period1, period2):
+        return "https://query1.finance.yahoo.com/v8/finance/chart/%s" \
+               "?period1=%d&period2=%d&interval=1d" % (quote(ticker, safe='-^='), period1,
+                                                       period2)
+
+    @staticmethod
+    def chart_result(json_resp):
+        results = json_resp.get('chart', {}).get('result')
+        return results[0] if results else None
+
 
 class CoinPaprika(DataSourceBase):
     def __init__(self):
