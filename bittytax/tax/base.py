@@ -454,9 +454,12 @@ class TaxEventCapitalGains(TaxEvent):
 
     def format_disposal(self):
         if self.disposal_type != TaxCalculator.DISPOSAL_NO_GAIN_NO_LOSS:
+            # A disposal from a Section 104 pool has no single acquisition date, so fall back
+            #  to the same placeholder as the PDF report (see ReportPdf.datefilter)
             return "%s (%s)" % (
                 self.disposal_type,
-                self.acquisition_date.strftime(config.date_format),
+                self.acquisition_date.strftime(config.date_format)
+                if self.acquisition_date else "N/A",
             )
 
         return self.disposal_type
