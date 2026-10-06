@@ -3,7 +3,8 @@
 
 import os
 
-from colorama import Fore
+from colorama import Fore, Back
+import requests
 
 from ..version import __version__
 from ..config import config
@@ -30,11 +31,22 @@ class PriceData(object):
             return config.data_source_fiat
         return config.data_source_crypto
 
+    def data_source_failed(self, data_source, exception):
+        # An unavailable data source must not abort the run when another source in the chain can
+        #  still provide the price
+        print("%sWARNING%s %s is unavailable (%s), trying the next data source" % (
+            Back.YELLOW+Fore.BLACK, Back.RESET+Fore.YELLOW,
+            self.data_sources[data_source.upper()].name(), exception))
+
     def get_latest_ds(self, data_source, asset, quote):
         if data_source.upper() in self.data_sources:
             if asset in self.data_sources[data_source.upper()].assets:
-                return self.data_sources[data_source.upper()].get_latest(asset, quote), \
-                       self.data_sources[data_source.upper()].assets[asset]['name']
+                try:
+                    return self.data_sources[data_source.upper()].get_latest(asset, quote), \
+                           self.data_sources[data_source.upper()].assets[asset]['name']
+                except requests.exceptions.RequestException as e:
+                    self.data_source_failed(data_source, e)
+                    return None, self.data_sources[data_source.upper()].assets[asset]['name']
 
             return None, None
         raise UnexpectedDataSourceError(data_source, DataSourceBase)
@@ -53,7 +65,11 @@ class PriceData(object):
                               self.data_sources[data_source.upper()].assets[asset]['name'], \
                               self.data_sources[data_source.upper()].prices[pair][date]['url']
 
-                self.data_sources[data_source.upper()].get_historical(asset, quote, timestamp)
+                try:
+                    self.data_sources[data_source.upper()].get_historical(asset, quote, timestamp)
+                except requests.exceptions.RequestException as e:
+                    self.data_source_failed(data_source, e)
+                    return None, self.data_sources[data_source.upper()].assets[asset]['name'], None
                 if pair in self.data_sources[data_source.upper()].prices and \
                    date in self.data_sources[data_source.upper()].prices[pair]:
                     return self.data_sources[data_source.upper()].prices[pair][date]['price'], \
