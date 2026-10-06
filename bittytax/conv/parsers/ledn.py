@@ -24,10 +24,14 @@ def parse_ledn(data_row, parser, **kwargs):
                              Back.YELLOW+Fore.BLACK, Back.RESET+Fore.YELLOW))
         return
 
+    amount = row_dict['Amount']
+    if row_dict['Ledn Fee Amount'] and row_dict['Currency'] == row_dict['Fee Currency']:
+        amount -= row_dict['Ledn Fee Amount']
+
     if row_dict['Source'] == "Deposit":
         data_row.t_record = TransactionOutRecord(TransactionOutRecord.TYPE_DEPOSIT,
                                                  data_row.timestamp,
-                                                 buy_quantity=row_dict['Amount'],
+                                                 buy_quantity=amount,
                                                  buy_asset=row_dict['Currency'],
                                                  fee_quantity=row_dict['Ledn Fee Amount'],
                                                  fee_asset=row_dict['Fee Currency'],
@@ -35,7 +39,7 @@ def parse_ledn(data_row, parser, **kwargs):
     elif row_dict['Source'] == "Withdrawal":
         data_row.t_record = TransactionOutRecord(TransactionOutRecord.TYPE_WITHDRAWAL,
                                                  data_row.timestamp,
-                                                 sell_quantity=row_dict['Amount'],
+                                                 sell_quantity=amount,
                                                  sell_asset=row_dict['Currency'],
                                                  fee_quantity=row_dict['Ledn Fee Amount'],
                                                  fee_asset=row_dict['Fee Currency'],
@@ -43,7 +47,7 @@ def parse_ledn(data_row, parser, **kwargs):
     elif row_dict['Source'] == "Interest":
         data_row.t_record = TransactionOutRecord(TransactionOutRecord.TYPE_INTEREST,
                                                  data_row.timestamp,
-                                                 buy_quantity=row_dict['Amount'],
+                                                 buy_quantity=amount,
                                                  buy_asset=row_dict['Currency'],
                                                  fee_quantity=row_dict['Ledn Fee Amount'],
                                                  fee_asset=row_dict['Fee Currency'],
