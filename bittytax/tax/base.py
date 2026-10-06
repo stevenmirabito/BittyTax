@@ -368,6 +368,7 @@ class TaxCalculator(ABC):
                     self.tax_report[tax_year]["Income"].totalise(te)
 
         self.tax_report[tax_year]["Income"].totals_by_type()
+        self.tax_report[tax_year]["Income"].totals_by_wallet()
 
     def calculate_holdings(self, value_asset):
         holdings = {}
@@ -441,12 +442,15 @@ class TaxEventCapitalGains(TaxEvent):
         super(TaxEventCapitalGains, self).__init__(s.timestamp, s.asset)
         self.disposal_type = disposal_type
         self.quantity = s.quantity
+        self.wallet = s.wallet
         self.cost = cost.quantize(PRECISION)
         self.fees = fees.quantize(PRECISION)
         self.proceeds = s.proceeds.quantize(PRECISION)
         self.gain = self.proceeds - self.cost - self.fees
         self.acquisition_date = b.timestamp if b else None
 
+    def format_asset(self):
+        return "{:0,.8f} {}".format(self.quantity, self.asset)
 
     def format_disposal(self):
         if self.disposal_type != TaxCalculator.DISPOSAL_NO_GAIN_NO_LOSS:
@@ -473,6 +477,7 @@ class TaxEventIncome(TaxEvent):
         self.type = b.t_type
         self.quantity = b.quantity
         self.amount = b.cost.quantize(PRECISION)
+        self.wallet = b.wallet
         self.note = b.note
         if b.fee_value:
             self.fees = b.fee_value.quantize(PRECISION)
@@ -556,6 +561,7 @@ class CalculateCapitalGains(object):
                 "proceeds_warning": False,
             }
         self.assets = {}
+        self.wallets = {}
 
     def get_ct_rate(self, date):
         if date < datetime(date.year, 4, 1, tzinfo=config.TZ_LOCAL):
@@ -585,8 +591,13 @@ class CalculateCapitalGains(object):
 
         self.assets[te.asset].append(te)
 
+        if te.wallet not in self.wallets:
+            self.wallets[te.wallet] = {}
 
+        if te.asset not in self.wallets[te.wallet]:
+            self.wallets[te.wallet][te.asset] = []
 
+        self.wallets[te.wallet][te.asset].append(te)
 
     def tax_estimate_cgt(self, tax_year):
         if self.totals["gain"] > self.estimate["allowance"]:
@@ -654,6 +665,8 @@ class CalculateIncome(object):
         self.assets = {}
         self.types = {}
         self.type_totals = {}
+        self.wallets = {}
+        self.wallet_totals = {}
 
     def totalise(self, te):
         self.totals["amount"] += te.amount
@@ -669,7 +682,10 @@ class CalculateIncome(object):
 
         self.types[te.type].append(te)
 
+        if te.wallet not in self.wallets:
+            self.wallets[te.wallet] = []
 
+        self.wallets[te.wallet].append(te)
 
     def totals_by_type(self):
         for income_type in self.types:
@@ -682,6 +698,16 @@ class CalculateIncome(object):
                     self.type_totals[income_type]["amount"] += te.amount
                     self.type_totals[income_type]["fees"] += te.fees
 
+    def totals_by_wallet(self):
+        for income_wallet in self.wallets:
+            for te in self.wallets[income_wallet]:
+                if income_wallet not in self.wallet_totals:
+                    self.wallet_totals[income_wallet] = {}
+                    self.wallet_totals[income_wallet]["amount"] = te.amount
+                    self.wallet_totals[income_wallet]["fees"] = te.fees
+                else:
+                    self.wallet_totals[income_wallet]["amount"] += te.amount
+                    self.wallet_totals[income_wallet]["fees"] += te.fees
 
 
 class TaxRule(object):

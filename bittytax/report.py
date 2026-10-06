@@ -56,6 +56,8 @@ class ReportPdf(object):
 
     @staticmethod
     def datefilter(date):
+        if not date:
+            return "N/A"
         if isinstance(date, datetime):
             return date.strftime(config.date_format)
         return dateutil.parser.parse(date).strftime(config.date_format)
@@ -67,7 +69,7 @@ class ReportPdf(object):
 
     @staticmethod
     def quantityfilter(quantity):
-        return '{:0,f}'.format(quantity.normalize())
+        return '{:0,.8f}'.format(quantity.normalize())
 
     @staticmethod
     def valuefilter(value):
@@ -506,7 +508,7 @@ class ReportLog(object):
     @staticmethod
     def format_quantity(quantity):
         if quantity is not None:
-            return '{:0,f}'.format(quantity.normalize())
+            return '{:0,.8f}'.format(quantity.normalize())
         return 'n/a'
 
     @staticmethod
