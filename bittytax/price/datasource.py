@@ -39,11 +39,14 @@ class DataSourceBase(object):
     def name(self):
         return self.__class__.__name__
 
+    def get_headers(self):
+        return {'User-Agent': self.USER_AGENT}
+
     def get_json(self, url):
         if config.debug:
             print("%sprice: GET %s" % (Fore.YELLOW, url))
 
-        response = requests.get(url, headers={'User-Agent': self.USER_AGENT}, timeout=self.TIME_OUT)
+        response = requests.get(url, headers=self.get_headers(), timeout=self.TIME_OUT)
 
         if response.status_code in [429, 502, 503, 504]:
             response.raise_for_status()
@@ -291,14 +294,65 @@ class CryptoCompare(DataSourceBase):
                                timestamp)
 
 class CoinGecko(DataSourceBase):
+    # CoinGecko's public (keyless) API only serves the last 365 days of history. A free "Demo"
+    #  API key raises the limit and unlocks the full history required for tax calculations.
+    #  Set 'coingecko_api_key' in bittytax.conf, or export COINGECKO_API_KEY.
+    API_KEY_HEADER = 'x-cg-demo-api-key'
+    KEYLESS_MAX_DAYS = 365
+    MARKETS_PER_PAGE = 250
+
     def __init__(self):
         super(CoinGecko, self).__init__()
         json_resp = self.get_json("https://api.coingecko.com/api/v3/coins/list")
         self.ids = {c['id']: {'symbol': c['symbol'].strip().upper(), 'name': c['name'].strip()}
                     for c in json_resp}
-        self.assets = {c['symbol'].strip().upper(): {'id': c['id'], 'name': c['name'].strip()}
-                       for c in json_resp}
+
+        # CoinGecko symbols are not unique (12 coins are called 'BTC', 49 are called 'USDT'), so
+        #  the symbol must be resolved to the most significant coin by market cap, otherwise an
+        #  arbitrary duplicate (e.g. 'osmosis-allbtc' or 'the-ticker-is-eth') would be priced.
+        self.rank = {c['id']: i
+                     for i, c in enumerate(self.get_json(self.markets_url()))}
+        self.assets = {}
+        for listing in json_resp:
+            symbol = listing['symbol'].strip().upper()
+            asset = {'id': listing['id'], 'name': listing['name'].strip()}
+            if symbol not in self.assets or self._more_significant(asset, self.assets[symbol]):
+                self.assets[symbol] = asset
+
         self.get_config_assets()
+
+        if not self.api_key():
+            print("%sWARNING%s CoinGecko API key not set, only the last %d days of price data "
+                  "are available; historic prices before that will be valued at 0. Add "
+                  "'coingecko_api_key' to %s (or export COINGECKO_API_KEY) for full history." % (
+                      Back.YELLOW+Fore.BLACK, Back.RESET+Fore.YELLOW, self.KEYLESS_MAX_DAYS,
+                      os.path.join(config.BITTYTAX_PATH, config.BITTYTAX_CONFIG)))
+
+    @classmethod
+    def markets_url(cls):
+        return "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd" \
+               "&order=market_cap_desc&per_page=%d&page=1" % cls.MARKETS_PER_PAGE
+
+    def _more_significant(self, asset, current):
+        # An unranked (long tail) coin never displaces a ranked one; ties keep the first seen
+        return asset['id'] in self.rank and \
+            self.rank[asset['id']] < self.rank.get(current['id'], len(self.rank))
+
+    @staticmethod
+    def api_key():
+        return config.coingecko_api_key or os.environ.get('COINGECKO_API_KEY') or None
+
+    def get_headers(self):
+        headers = super(CoinGecko, self).get_headers()
+        api_key = self.api_key()
+        if api_key:
+            headers[self.API_KEY_HEADER] = api_key
+
+        return headers
+
+    def max_days(self):
+        # 'max' is only available to API key holders, the public API rejects it
+        return 'max' if self.api_key() else str(self.KEYLESS_MAX_DAYS)
 
     def get_latest(self, asset, quote, asset_id=None):
         if asset_id is None:
@@ -314,8 +368,8 @@ class CoinGecko(DataSourceBase):
         if asset_id is None:
             asset_id = self.assets[asset]['id']
 
-        url = "https://api.coingecko.com/api/v3/coins/%s/market_chart?vs_currency=%s&days=max" % (
-            asset_id, quote)
+        url = "https://api.coingecko.com/api/v3/coins/%s/market_chart?vs_currency=%s&days=%s" % (
+            asset_id, quote, self.max_days())
         json_resp = self.get_json(url)
         pair = self.pair(asset, quote)
         if 'prices' in json_resp:

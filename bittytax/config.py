@@ -44,7 +44,9 @@ class Config(object):
     TRADE_ALLOWABLE_COST_SPLIT = 2
 
     DATA_SOURCE_FIAT = ['BittyTaxAPI']
-    DATA_SOURCE_CRYPTO = ['CryptoCompare', 'CoinGecko']
+    # CryptoCompare and CoinDesk are no longer usable: CryptoCompare's coinlist endpoint now
+    #  requires an API key and CoinDesk's v1 API has been retired.
+    DATA_SOURCE_CRYPTO = ['CoinGecko']
 
     DEFAULT_CONFIG = {
         'date_format': '%d/%m/%Y',
@@ -63,6 +65,7 @@ class Config(object):
         'data_source_select': {},
         'data_source_fiat': DATA_SOURCE_FIAT,
         'data_source_crypto': DATA_SOURCE_CRYPTO,
+        'coingecko_api_key': '',
         'coinbase_zero_fees_are_gifts': False,
     }
 
