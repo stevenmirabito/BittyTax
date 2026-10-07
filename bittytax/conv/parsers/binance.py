@@ -194,9 +194,16 @@ def parse_binance_statements(data_rows, parser, **_kwargs):
         data_row.timestamp = DataParser.parse_timestamp(row_dict['UTC_Time'])
 
         if row_dict['Operation'] in ("Commission History", "Referrer rebates", "Commission Rebate",
-                                     "Commission Fee Shared With You", "Cash Voucher distribution",
-                                     "Referral Kickback"):
-            data_row.t_record = TransactionOutRecord(TransactionOutRecord.TYPE_GIFT_RECEIVED,
+                                     "Cash Voucher distribution"):
+            # Commission earned from people you referred, or promotional vouchers
+            data_row.t_record = TransactionOutRecord(TransactionOutRecord.TYPE_REFERRAL,
+                                                     data_row.timestamp,
+                                                     buy_quantity=row_dict['Change'],
+                                                     buy_asset=row_dict['Coin'],
+                                                     wallet=WALLET)
+        elif row_dict['Operation'] in ("Commission Fee Shared With You", "Referral Kickback"):
+            # Part of your own trading fees returned
+            data_row.t_record = TransactionOutRecord(TransactionOutRecord.TYPE_FEE_REBATE,
                                                      data_row.timestamp,
                                                      buy_quantity=row_dict['Change'],
                                                      buy_asset=row_dict['Coin'],

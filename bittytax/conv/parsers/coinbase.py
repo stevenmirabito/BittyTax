@@ -62,7 +62,7 @@ def do_parse_coinbase(data_row, parser, fiat_values):
     if row_dict['Transaction Type'] == "Receive":
         if "Coinbase Referral" in row_dict['Notes']:
             # We can calculate the exact buy_value from the spot price
-            data_row.t_record = TransactionOutRecord(TransactionOutRecord.TYPE_GIFT_RECEIVED,
+            data_row.t_record = TransactionOutRecord(TransactionOutRecord.TYPE_REFERRAL,
                                  data_row.timestamp,
                                  buy_quantity=row_dict['Quantity Transacted'],
                                  buy_asset=row_dict['Asset'],
@@ -279,7 +279,7 @@ def parse_coinbase_transactions(data_row, _parser, **_kwargs):
         # Could be a referral bonus or deposit/withdrawal to/from Coinbase Pro
         if row_dict['Notes'] != "" and row_dict['Currency'] == "BTC":
             # Bonus is always in BTC
-            data_row.t_record = TransactionOutRecord(TransactionOutRecord.TYPE_GIFT_RECEIVED,
+            data_row.t_record = TransactionOutRecord(TransactionOutRecord.TYPE_REFERRAL,
                                                      data_row.timestamp,
                                                      buy_quantity=row_dict['Amount'],
                                                      buy_asset=row_dict['Currency'],

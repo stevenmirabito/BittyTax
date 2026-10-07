@@ -62,7 +62,7 @@ def parse_nexo(data_row, parser, **_kwargs):
                                                  buy_value=value,
                                                  wallet=WALLET)
     elif row_dict['Type'] == "Bonus":
-        data_row.t_record = TransactionOutRecord(TransactionOutRecord.TYPE_GIFT_RECEIVED,
+        data_row.t_record = TransactionOutRecord(TransactionOutRecord.TYPE_REFERRAL,
                                                  data_row.timestamp,
                                                  buy_quantity=amount,
                                                  buy_asset=asset,

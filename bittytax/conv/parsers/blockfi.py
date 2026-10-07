@@ -52,7 +52,7 @@ def parse_blockfi(data_row, parser, **kwargs):
                                                  buy_asset=row_dict['Cryptocurrency'],
                                                  wallet=WALLET)
     elif row_dict['Transaction Type'] == "Bonus Payment":
-        data_row.t_record = TransactionOutRecord(TransactionOutRecord.TYPE_GIFT_RECEIVED,
+        data_row.t_record = TransactionOutRecord(TransactionOutRecord.TYPE_REFERRAL,
                                                  data_row.timestamp,
                                                  buy_quantity=row_dict['Amount'],
                                                  buy_asset=row_dict['Cryptocurrency'],

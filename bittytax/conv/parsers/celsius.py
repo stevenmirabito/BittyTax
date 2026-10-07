@@ -49,7 +49,7 @@ def parse_celsius(data_row, parser, **kwargs):
                                                  wallet=WALLET)
     elif row_dict['Transaction type'] in ("promo_code_reward", "referred_award", "referrer_award",
                                           "bonus_token", "Promo Code Reward", "Referrer Award"):
-        data_row.t_record = TransactionOutRecord(TransactionOutRecord.TYPE_GIFT_RECEIVED,
+        data_row.t_record = TransactionOutRecord(TransactionOutRecord.TYPE_REFERRAL,
                                                  data_row.timestamp,
                                                  buy_quantity=row_dict['Coin amount'],
                                                  buy_asset=row_dict['Coin type'],

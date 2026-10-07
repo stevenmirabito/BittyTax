@@ -31,6 +31,7 @@
 - US tax calculator: carryover and dual basis for gifts received.
 - Accounting tool: Cashback, Fee-Rebate and Referral transaction types (as in upstream v0.6.0). Under US rules cashback and fee rebates are received at FMV basis and are not income, and referrals are income.
 - Crypto.com parser: card cashback and reimbursements are Cashback, referral bonuses are Referral.
+- Conversion tool: referral, promo and sign-up bonuses are Referral (Binance, Bitfinex, BlockFi, Celsius, Coinbase, CoinTracking, Gravity, Koinly, Nexo), and exchange fee rebates are Fee-Rebate (Binance kickbacks, HitBTC, Hotbit).
 - US tax calculator: standing orders and specific identification of lots (Notice 2025-7 / 2026-20).
 - Accounting tool: --export-8949 and --export-lots for US tax rules.
 - Accounting tool: 'Standing Orders', 'Identifications' and '1099-DA' workbook sheets for US tax rules, 1099-DA rows set Form 8949 columns (d)-(g) and are reconciled with your records.

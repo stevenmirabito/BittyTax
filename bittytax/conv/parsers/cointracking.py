@@ -9,7 +9,7 @@ WALLET = "CoinTracking"
 
 COINTRACKING_D_MAPPING = {'Income': TransactionOutRecord.TYPE_INCOME,
                           'Gift/Tip': TransactionOutRecord.TYPE_GIFT_RECEIVED,
-                          'Reward/Bonus': TransactionOutRecord.TYPE_GIFT_RECEIVED,
+                          'Reward/Bonus': TransactionOutRecord.TYPE_REFERRAL,
                           'Mining': TransactionOutRecord.TYPE_MINING,
                           'Airdrop': TransactionOutRecord.TYPE_AIRDROP,
                           'Staking': TransactionOutRecord.TYPE_STAKING,

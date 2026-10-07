@@ -78,7 +78,7 @@ def parse_bitfinex_ledger(data_row, _parser, **_kwargs):
     data_row.timestamp = DataParser.parse_timestamp(row_dict['DATE'], dayfirst=True)
 
     if is_referral(row_dict['DESCRIPTION']):
-        data_row.t_record = TransactionOutRecord(TransactionOutRecord.TYPE_GIFT_RECEIVED,
+        data_row.t_record = TransactionOutRecord(TransactionOutRecord.TYPE_REFERRAL,
                                                  data_row.timestamp,
                                                  buy_quantity=row_dict['AMOUNT'],
                                                  buy_asset=row_dict['CURRENCY'],

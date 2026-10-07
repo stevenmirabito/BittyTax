@@ -102,7 +102,7 @@ def parse_gravity_row(tx_ids, parser, data_row, referral_type):
         if buy_quantity is None:
             return
     elif row_dict['transaction type'] == referral_type:
-        t_type = TransactionOutRecord.TYPE_GIFT_RECEIVED
+        t_type = TransactionOutRecord.TYPE_REFERRAL
         buy_quantity = row_dict['amount']
         buy_asset = row_dict['currency']
     elif row_dict['transaction type'] in ("referral fees collection", "referral fees grouping",
