@@ -119,7 +119,7 @@ def main():
     try:
         tax, value_asset = do_tax(transaction_records, args.tax_rules, args.skip_integrity)
         if not args.skip_integrity:
-            int_passed = do_integrity_check(audit, tax.holdings)
+            int_passed = do_integrity_check(audit, tax)
             if not int_passed:
                 parser.exit()
 
@@ -194,8 +194,9 @@ def do_tax(transaction_records, tax_rules, skip_integrity_check):
 
     return tax, value_asset
 
-def do_integrity_check(audit, holdings):
+def do_integrity_check(audit, tax):
     int_passed = True
+    holdings = tax.holdings
 
     if config.transfers_include:
         transfer_mismatch = transfer_mismatches(holdings)
@@ -203,14 +204,21 @@ def do_integrity_check(audit, holdings):
         transfer_mismatch = False
 
     pools_match = audit.compare_pools(holdings)
+    lot_failures = getattr(tax, 'integrity_failures', [])
 
-    if not pools_match or transfer_mismatch:
+    if not pools_match or transfer_mismatch or lot_failures:
         int_passed = False
 
     print("%sintegrity check: %s%s" % (
         Fore.CYAN, Fore.YELLOW, 'passed' if int_passed else 'failed'))
 
-    if transfer_mismatch:
+    if lot_failures:
+        print("%sERROR%s Integrity check failed: units removed which aren't held, "
+              "turn on logging [-d] to see transactions" % (
+                  Back.RED+Fore.BLACK, Back.RESET+Fore.RED))
+        for failure in lot_failures:
+            print("%s  %s" % (Fore.RED, failure))
+    elif transfer_mismatch:
         print("%sWARNING%s Integrity check failed: disposal(s) detected during transfer, "
               "turn on logging [-d] to see transactions" % (
                   Back.YELLOW+Fore.BLACK, Back.RESET+Fore.YELLOW))
