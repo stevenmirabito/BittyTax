@@ -573,6 +573,9 @@ class TaxEventCapitalGainsUS(TaxEventCapitalGains):
         self.lot_id = lot.lot_id
         self.cost = lot.cost.quantize(PRECISION)
         self.fees = (lot.fees + (s.fee_value or Decimal(0))).quantize(PRECISION)
+        # Selling costs, a 1099-DA reports proceeds net of these
+        self.sale_fees = (s.fee_value or Decimal(0)).quantize(PRECISION)
+        self.transferred_in = bool(lot.history)
         self.proceeds = s.proceeds.quantize(PRECISION)
         self.gain = self.proceeds - self.cost - self.fees
         self.acquisition_date = lot.acquired

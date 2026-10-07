@@ -17,6 +17,7 @@ from .config import config
 from .import_records import ImportRecords
 from .export_records import ExportRecords
 from .export_us import ExportForm8949, ExportLots
+from .reconcile_1099da import Reconcile1099DA
 from .transactions import TransactionHistory
 from .audit import AuditRecords
 from .price.valueasset import ValueAsset
@@ -93,12 +94,20 @@ def main():
                         dest='export_lots',
                         action='store_true',
                         help="US tax rules only, export per-wallet lot records (CSV)")
+    parser.add_argument('--reconcile-1099da',
+                        dest='reconcile_1099da',
+                        metavar='FILENAME',
+                        type=str,
+                        help="US tax rules only, compare a Form 1099-DA CSV (Wallet, Asset, "
+                             "Date Sold, Quantity, Proceeds, Cost Basis, Date Acquired) "
+                             "with your records")
 
     args = parser.parse_args()
     config.debug = args.debug
 
     for flag, enabled in (('--export-8949', args.export_8949),
-                          ('--export-lots', args.export_lots)):
+                          ('--export-lots', args.export_lots),
+                          ('--reconcile-1099da', args.reconcile_1099da)):
         if enabled and args.tax_rules != config.TAX_RULES_US_INDIVIDUAL:
             parser.error("argument %s: requires --taxrules %s" % (
                 flag, config.TAX_RULES_US_INDIVIDUAL))
@@ -154,6 +163,12 @@ def main():
         ExportForm8949(tax.tax_report).write_csv()
     if args.export_lots:
         ExportLots(tax).write_csv()
+    if args.reconcile_1099da:
+        try:
+            Reconcile1099DA(args.reconcile_1099da, tax).write_csv()
+        except (IOError, ValueError) as e:
+            parser.exit("%sERROR%s 1099-DA reconciliation failed: %s" % (
+                Back.RED+Fore.BLACK, Back.RESET+Fore.RED, e))
 
     if args.nopdf:
         report_log = ReportLogUS if args.tax_rules == config.TAX_RULES_US_INDIVIDUAL else ReportLog
