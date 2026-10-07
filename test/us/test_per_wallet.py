@@ -169,3 +169,36 @@ def test_fragments_of_a_lot_are_reported_once(tmp_path):
         'Trade,50000,USD,,1,BTC,50000,,,,Exchange,2025-04-01T12:00:00Z,',
     ])
     assert _gains(tax) == [('Exchange', '1', '10000.00', '0.00', '50000.00', '2023-01-01')]
+
+
+def test_deposit_recorded_before_withdrawal(tmp_path):
+    # Exchanges can stamp a withdrawal when it completes, after the deposit arrived
+    tax, mismatches = _run(tmp_path, [
+        'Trade,1,BTC,10000,10000,USD,,,,,Exchange,2023-01-01T12:00:00Z,',
+        'Deposit,1,BTC,,,,,,,,Ledger,2025-02-01T12:00:00Z,',
+        'Trade,50000,USD,,1,BTC,50000,,,,Ledger,2025-02-01T12:05:00Z,',
+        'Withdrawal,,,,1,BTC,,,,,Exchange,2025-02-01T12:10:00Z,',
+    ])
+    assert _gains(tax) == [('Ledger', '1', '10000.00', '0.00', '50000.00', '2023-01-01')]
+    assert tax.integrity_failures == [] and mismatches == []
+
+
+def test_deposit_too_early_is_not_linked(tmp_path):
+    tax, _ = _run(tmp_path, [
+        'Trade,1,BTC,10000,10000,USD,,,,,Exchange,2023-01-01T12:00:00Z,',
+        'Deposit,1,BTC,,,,,,,,Ledger,2025-02-01T10:00:00Z,',
+        'Withdrawal,,,,1,BTC,,,,,Exchange,2025-02-01T12:10:00Z,',
+    ])
+    assert len(tax.integrity_failures) == 2
+
+
+def test_deposit_recorded_before_the_units_were_bought(tmp_path):
+    # Deposit stamped before the purchase that funded it, the lots move with the withdrawal
+    tax, mismatches = _run(tmp_path, [
+        'Deposit,1,BTC,,,,,,,,Ledger,2025-02-01T12:00:00Z,',
+        'Trade,1,BTC,10000,10000,USD,,,,,Exchange,2025-02-01T12:00:30Z,',
+        'Withdrawal,,,,1,BTC,,,,,Exchange,2025-02-01T12:01:00Z,',
+        'Trade,50000,USD,,1,BTC,50000,,,,Ledger,2025-02-02T12:00:00Z,',
+    ])
+    assert _gains(tax) == [('Ledger', '1', '10000.00', '0.00', '50000.00', '2025-02-01')]
+    assert tax.integrity_failures == [] and mismatches == []

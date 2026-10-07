@@ -17,7 +17,8 @@ from .base import TaxCalculator, TaxEvent, TaxEventCapitalGains, CalculateCapita
 from .lots import Lot, WalletLedger, FifoSelector, Shortfall
 from .lot_selection import SpecificSelector, identification_key, standing_order_for
 from .form_1099da import Reconciliation
-from .transfers import link_transfers, acquired_date, note_token, parse_date, GIFT_TOKENS
+from .transfers import (link_transfers, acquired_date, note_token, parse_date, tid_key,
+                        GIFT_TOKENS)
 
 PRECISION = Decimal('0.00')
 
@@ -61,6 +62,8 @@ class TaxCalculatorUS(TaxCalculator):
         self._phase = None
         self._record_events = True
         self._moved_by_record = {}
+        self._replayed = {}
+        self._transferred = set()
         self._broker_order_warnings = set()
 
     @staticmethod
@@ -134,6 +137,9 @@ class TaxCalculatorUS(TaxCalculator):
         self._phase = phase
         self._record_events = record_events
         self._moved_by_record = {}
+        # This pass's copies, a deposit recorded before its withdrawal moves the lots early
+        self._replayed = {tid_key(t): t for t in transactions}
+        self._transferred = set()
 
         if config.debug:
             print("%slots: %s pass" % (Fore.CYAN, phase))
@@ -329,6 +335,11 @@ class TaxCalculatorUS(TaxCalculator):
                 print("%slots:   %s <- %s" % (Fore.CYAN, tax_event, lot))
 
     def withdraw(self, ledger, t):
+        if tid_key(t) in self._transferred:
+            # Already moved, its deposit was recorded first
+            return
+        self._transferred.add(tid_key(t))
+
         deposit = self.links.deposit(t)
         if deposit is None:
             lots, _ = self.take_lots(ledger, t)
@@ -361,7 +372,12 @@ class TaxCalculatorUS(TaxCalculator):
 
     def deposit(self, ledger, t):
         if self.links.is_linked(t):
-            # The lots moved when the withdrawal was processed
+            withdrawal = self._replayed.get(tid_key(self.links.withdrawal(t) or t))
+            if withdrawal is not None and withdrawal is not t \
+                    and ledger.balance(withdrawal.wallet, withdrawal.asset) >= withdrawal.quantity:
+                # Recorded before its withdrawal: move the lots now if the sending wallet
+                #  already holds them, otherwise when the withdrawal is processed
+                self.withdraw(ledger, withdrawal)
             return
 
         self.add_lot(ledger, t)

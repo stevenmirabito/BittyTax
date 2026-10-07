@@ -72,6 +72,7 @@ class Config(object):
         'us_timezone': 'America/Los_Angeles',
         'us_wallet_cutover': '2025-01-01',
         'transfer_match_window_hours': 24,
+        'transfer_match_skew_minutes': 60,
         'transfer_match_tolerance': 0.005,
         'wallets': {},
         'us_taxpayer_name': '',

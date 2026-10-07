@@ -57,6 +57,9 @@ class TransferLinks(object):
     def deposit(self, withdrawal):
         return self.deposit_for.get(tid_key(withdrawal))
 
+    def withdrawal(self, deposit):
+        return self.withdrawal_for.get(tid_key(deposit))
+
     def is_linked(self, t):
         return tid_key(t) in self.deposit_for or tid_key(t) in self.withdrawal_for
 
@@ -67,7 +70,9 @@ def link_transfers(transactions):
     A transfer:<id> token in the note links the two explicitly. Otherwise a withdrawal is
     matched to a deposit of the same asset into a different wallet, which arrives within
     transfer_match_window_hours of it, for the same quantity or slightly less (network fees
-    taken from the amount sent, within transfer_match_tolerance).
+    taken from the amount sent, within transfer_match_tolerance). Exchanges timestamp
+    withdrawals at different stages, so a deposit can be recorded up to
+    transfer_match_skew_minutes before its withdrawal.
     """
     links = TransferLinks()
     withdrawals = [t for t in transactions
@@ -78,6 +83,7 @@ def link_transfers(transactions):
     _link_explicit(links, withdrawals, deposits)
 
     window = timedelta(hours=config.transfer_match_window_hours)
+    skew = timedelta(minutes=config.transfer_match_skew_minutes)
     tolerance = Decimal(str(config.transfer_match_tolerance))
     unlinked_deposits = [d for d in deposits if not links.is_linked(d)
                          and note_token(TRANSFER_TOKEN, d.note) is None]
@@ -89,11 +95,11 @@ def link_transfers(transactions):
         candidates = [d for d in unlinked_deposits
                       if d.asset == w.asset
                       and d.wallet != w.wallet
-                      and w.timestamp <= d.timestamp <= w.timestamp + window
+                      and w.timestamp - skew <= d.timestamp <= w.timestamp + window
                       and d.quantity <= w.quantity
                       and w.quantity - d.quantity <= w.quantity * tolerance]
         if candidates:
-            d = min(candidates, key=lambda d: (d.timestamp - w.timestamp,
+            d = min(candidates, key=lambda d: (abs(d.timestamp - w.timestamp),
                                                w.quantity - d.quantity, d.tid))
             links.link(w, d)
             unlinked_deposits.remove(d)
