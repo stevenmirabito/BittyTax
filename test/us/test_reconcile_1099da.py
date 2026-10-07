@@ -3,12 +3,13 @@
 
 from bittytax.config import config
 from bittytax.reconcile_1099da import Reconcile1099DA
-from conftest import run_tax, use_us_rules, write_csv
+from conftest import run_tax, us_records, use_us_rules, write_csv
 
 
 def test_reconcile_1099da(tmp_path):
-    use_us_rules(us_standing_orders=[
-        {'wallet': 'Coinbase', 'method': 'HIFO', 'effective_from': '2025-01-01'}])
+    use_us_rules()
+    records = us_records(**{'Standing Orders': [['Wallet', 'Method', 'Effective From'],
+                                                ['Coinbase', 'HIFO', '2025-01-01']]})
     tax = run_tax(write_csv(tmp_path, [
         'Trade,2,BTC,20000,20000,USD,,,,,Coinbase,2023-01-01T12:00:00Z,',
         'Trade,1,BTC,60000,60000,USD,,,,,Coinbase,2024-01-01T12:00:00Z,',
@@ -20,7 +21,7 @@ def test_reconcile_1099da(tmp_path):
         'Trade,3000,USD,,1,ETH,3000,,,,Coinbase,2025-04-01T12:00:00Z,',
         'Trade,45000,USD,,0.5,BTC,45000,,,,Coinbase,2025-05-01T12:00:00Z,',
         'Trade,30000,USD,,0.5,BTC,30000,,,,Coinbase,2025-06-01T12:00:00Z,',
-    ]), config.TAX_RULES_US_INDIVIDUAL)
+    ]), config.TAX_RULES_US_INDIVIDUAL, records=records)
 
     form = tmp_path / '1099da.csv'
     form.write_text('\n'.join([

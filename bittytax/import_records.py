@@ -13,6 +13,7 @@ import xlrd
 from .config import config
 from .transactions import Buy, Sell
 from .record import TransactionRecord as TR
+from .us_records import UsRecords
 from .exceptions import TransactionParserError, UnexpectedTransactionTypeError, \
                         TimestampParserError, DataValueError, MissingDataError, \
                         UnexpectedDataError
@@ -22,6 +23,7 @@ class ImportRecords(object):
         self.t_rows = []
         self.success_cnt = 0
         self.failure_cnt = 0
+        self.us_records = UsRecords()
 
     def import_excel(self, filename):
         workbook = xlrd.open_workbook(filename)
@@ -30,6 +32,11 @@ class ImportRecords(object):
         for worksheet in workbook.sheets():
             if worksheet.name.startswith('--'):
                 print("%sskipping '%s' worksheet" % (Fore.GREEN, worksheet.name))
+                continue
+
+            kind = UsRecords.sheet_kind(worksheet.name)
+            if kind:
+                self.import_us_sheet(kind, worksheet, workbook)
                 continue
             if config.debug:
                 print("%simporting '%s' rows" % (Fore.CYAN, worksheet.name))
@@ -64,6 +71,18 @@ class ImportRecords(object):
 
         workbook.release_resources()
         del workbook
+
+    def import_us_sheet(self, kind, worksheet, workbook):
+        if config.debug:
+            print("%simporting '%s' as %s" % (Fore.CYAN, worksheet.name, kind))
+
+        rows = [[self.convert_cell(worksheet.cell(row_num, cell_num), workbook)
+                 for cell_num in range(0, worksheet.ncols)]
+                for row_num in range(0, worksheet.nrows)]
+        errors = self.us_records.parse_sheet(kind, worksheet.name, rows)
+        for error in errors:
+            tqdm.write("%sERROR%s %s" % (Back.RED+Fore.BLACK, Back.RESET+Fore.RED, error))
+        self.failure_cnt += len(errors)
 
     @staticmethod
     def convert_cell(cell, workbook):

@@ -74,8 +74,6 @@ class Config(object):
         'transfer_match_window_hours': 24,
         'transfer_match_tolerance': 0.005,
         'wallets': {},
-        'us_standing_orders': [],
-        'us_identifications_file': None,
     }
 
     def __init__(self):

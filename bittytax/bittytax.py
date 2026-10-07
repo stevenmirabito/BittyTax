@@ -127,7 +127,7 @@ def main():
     config.set_tax_rules(args.tax_rules)
 
     try:
-        transaction_records = do_import(args.filename)
+        transaction_records, us_records = do_import(args.filename)
     except IOError:
         parser.exit("%sERROR%s File could not be read: %s" % (
             Back.RED+Fore.BLACK, Back.RESET+Fore.RED, args.filename))
@@ -141,7 +141,8 @@ def main():
     audit = AuditRecords(transaction_records)
 
     try:
-        tax, value_asset = do_tax(transaction_records, args.tax_rules, args.skip_integrity)
+        tax, value_asset = do_tax(transaction_records, args.tax_rules, args.skip_integrity,
+                                  us_records)
         if not args.skip_integrity:
             int_passed = do_integrity_check(audit, tax)
             if not int_passed:
@@ -213,14 +214,14 @@ def do_import(filename):
     if import_records.failure_cnt > 0:
         raise ImportFailureError
 
-    return import_records.get_records()
+    return import_records.get_records(), import_records.us_records
 
-def do_tax(transaction_records, tax_rules, skip_integrity_check):
+def do_tax(transaction_records, tax_rules, skip_integrity_check, us_records=None):
     value_asset = ValueAsset()
     transaction_history = TransactionHistory(transaction_records, value_asset)
 
     if tax_rules == config.TAX_RULES_US_INDIVIDUAL:
-        tax = TaxCalculatorUS(transaction_history.transactions, tax_rules)
+        tax = TaxCalculatorUS(transaction_history.transactions, tax_rules, us_records)
         tax.calculate(skip_integrity_check)
     elif tax_rules == config.TAX_RULES_UK_INDIVIDUAL or tax_rules in config.TAX_RULES_UK_COMPANY:
         tax = TaxCalculatorUK(transaction_history.transactions, tax_rules)

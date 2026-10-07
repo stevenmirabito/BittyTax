@@ -7,11 +7,7 @@ of the sale. A standing order applies only from when it was recorded, and a spec
 identification recorded after the transaction it names is rejected.
 """
 
-import csv
-from decimal import Decimal, InvalidOperation
-
 from .lots import FifoSelector
-from .transfers import parse_date
 
 
 class LifoSelector(object):
@@ -64,22 +60,6 @@ class StandingOrder(object):
         return self.selector.order(lots, disposal)
 
 
-def load_standing_orders(entries):
-    """Standing orders from config: [{wallet, method, effective_from}], wallet '*' for all."""
-    orders = []
-    for entry in entries or []:
-        method = str(entry.get('method', '')).upper()
-        if method not in METHODS:
-            raise ValueError("us_standing_orders: unknown method '%s', use one of %s" % (
-                entry.get('method'), ', '.join(sorted(METHODS))))
-        if 'effective_from' not in entry:
-            raise ValueError("us_standing_orders: effective_from is required, the date and "
-                             "time the order was recorded")
-        orders.append(StandingOrder(entry.get('wallet', '*'), method,
-                                    parse_date(str(entry['effective_from']))))
-    return orders
-
-
 def standing_order_for(orders, wallet, timestamp):
     """Latest order in force at the time, a wallet's own order before a '*' order."""
     in_force = [o for o in orders if o.effective_from <= timestamp]
@@ -91,8 +71,8 @@ def standing_order_for(orders, wallet, timestamp):
 
 
 class Identification(object):
-    def __init__(self, row_num, wallet, timestamp, asset, quantity, lot_id, recorded_at):
-        self.row_num = row_num
+    def __init__(self, source, wallet, timestamp, asset, quantity, lot_id, recorded_at):
+        self.source = source
         self.wallet = wallet
         self.timestamp = timestamp
         self.asset = asset
@@ -107,18 +87,3 @@ class Identification(object):
 
 def identification_key(wallet, asset, timestamp):
     return (wallet, asset, timestamp.replace(microsecond=0).timestamp())
-
-
-def load_identifications(filename):
-    """Specific identifications: Wallet, Timestamp, Asset, Quantity, Lot ID, Recorded At."""
-    identifications = {}
-    with open(filename, newline='', encoding='utf-8') as csv_file:
-        for row_num, row in enumerate(csv.DictReader(csv_file), start=2):
-            try:
-                ident = Identification(row_num, row['Wallet'], parse_date(row['Timestamp']),
-                                       row['Asset'], Decimal(row['Quantity']), row['Lot ID'],
-                                       parse_date(row['Recorded At']))
-            except (KeyError, ValueError, InvalidOperation) as e:
-                raise ValueError("%s row %d: %s" % (filename, row_num, e))
-            identifications.setdefault(ident.key(), []).append(ident)
-    return identifications

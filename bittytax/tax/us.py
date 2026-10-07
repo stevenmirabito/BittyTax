@@ -2,7 +2,6 @@
 # (c) Nano Nano Ltd 2019
 # (c) Steven Mirabito 2022
 
-import os
 import sys
 import copy
 from datetime import date, datetime
@@ -16,8 +15,7 @@ from ..config import config
 from ..transactions import Buy, Sell
 from .base import TaxCalculator, TaxEvent, TaxEventCapitalGains, CalculateCapitalGains
 from .lots import Lot, WalletLedger, FifoSelector, Shortfall
-from .lot_selection import (SpecificSelector, identification_key, load_identifications,
-                            load_standing_orders, standing_order_for)
+from .lot_selection import SpecificSelector, identification_key, standing_order_for
 from .transfers import link_transfers, acquired_date, note_token, parse_date, GIFT_TOKENS
 
 PRECISION = Decimal('0.00')
@@ -45,8 +43,9 @@ class TaxCalculatorUS(TaxCalculator):
     NON_SALE_TYPES = (Sell.TYPE_GIFT_SENT, Sell.TYPE_GIFT_SPOUSE, Sell.TYPE_CHARITY_SENT,
                       Sell.TYPE_LOST)
 
-    def __init__(self, transactions, tax_rules):
+    def __init__(self, transactions, tax_rules, us_records=None):
         super(TaxCalculatorUS, self).__init__(transactions, tax_rules)
+        self.us_records = us_records
         self.ordered = []
         self.links = None
         self.ledger = None
@@ -70,7 +69,9 @@ class TaxCalculatorUS(TaxCalculator):
         return datetime(value.year, value.month, value.day, tzinfo=config.TZ_LOCAL)
 
     def calculate(self, skip_integrity_check=False):
-        self.load_identification()
+        if self.us_records is not None:
+            self.standing_orders = self.us_records.standing_orders
+            self.identifications = self.us_records.identifications
         self.prepare_transactions()
         self.links = link_transfers(self.ordered)
         for error in self.links.errors:
@@ -95,23 +96,9 @@ class TaxCalculatorUS(TaxCalculator):
         for idents in self.identifications.values():
             for ident in idents:
                 if not ident.used:
-                    self.warn("Identification on row %d of %s doesn't match a disposal or "
-                              "transfer of %s from %s at %s" % (
-                                  ident.row_num, config.us_identifications_file,
-                                  ident.asset, ident.wallet, ident.timestamp.isoformat()))
-
-    def load_identification(self):
-        try:
-            self.standing_orders = load_standing_orders(config.us_standing_orders)
-        except ValueError as e:
-            self.fail(str(e))
-
-        if config.us_identifications_file:
-            filename = os.path.expanduser(config.us_identifications_file)
-            try:
-                self.identifications = load_identifications(filename)
-            except (IOError, ValueError) as e:
-                self.fail("Specific identifications not loaded: %s" % e)
+                    self.warn("Identification on %s doesn't match a disposal or transfer of "
+                              "%s from %s at %s" % (ident.source, ident.asset, ident.wallet,
+                                                    ident.timestamp.isoformat()))
 
     def prepare_transactions(self):
         transactions = copy.deepcopy(self.transactions)
