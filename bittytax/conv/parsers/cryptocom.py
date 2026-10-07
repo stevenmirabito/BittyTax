@@ -74,10 +74,23 @@ def parse_crypto_com(data_row, parser, **_kwargs):
                                                      sell_quantity=abs(Decimal(row_dict['Amount'])),
                                                      sell_asset=row_dict['Currency'],
                                                      wallet=WALLET)
-    elif row_dict['Transaction Kind'] in ("referral_bonus", "referral_card_cashback",
-                                          "reimbursement", "gift_card_reward", "transfer_cashback",
-                                          "admin_wallet_credited", "referral_gift",
-                                          "campaign_reward"):
+    elif row_dict['Transaction Kind'] in ("referral_card_cashback", "reimbursement",
+                                          "gift_card_reward", "transfer_cashback"):
+        # Card cashback ("CRO Rewards") and subscription rebates
+        data_row.t_record = TransactionOutRecord(TransactionOutRecord.TYPE_CASHBACK,
+                                                 data_row.timestamp,
+                                                 buy_quantity=row_dict['Amount'],
+                                                 buy_asset=row_dict['Currency'],
+                                                 buy_value=value,
+                                                 wallet=WALLET)
+    elif row_dict['Transaction Kind'] in ("referral_bonus", "referral_gift"):
+        data_row.t_record = TransactionOutRecord(TransactionOutRecord.TYPE_REFERRAL,
+                                                 data_row.timestamp,
+                                                 buy_quantity=row_dict['Amount'],
+                                                 buy_asset=row_dict['Currency'],
+                                                 buy_value=value,
+                                                 wallet=WALLET)
+    elif row_dict['Transaction Kind'] in ("admin_wallet_credited", "campaign_reward"):
         data_row.t_record = TransactionOutRecord(TransactionOutRecord.TYPE_GIFT_RECEIVED,
                                                  data_row.timestamp,
                                                  buy_quantity=row_dict['Amount'],

@@ -37,7 +37,10 @@ class TaxCalculatorUS(TaxCalculator):
     DISPOSAL_FIFO = FifoSelector.name
 
     INCOME_TYPES = (Buy.TYPE_MINING, Buy.TYPE_STAKING, Buy.TYPE_DIVIDEND, Buy.TYPE_INTEREST,
-                    Buy.TYPE_INCOME, Buy.TYPE_AIRDROP)
+                    Buy.TYPE_INCOME, Buy.TYPE_AIRDROP, Buy.TYPE_REFERRAL)
+
+    # Received at FMV basis but not income: rebates reduce the price of what was bought
+    REBATE_TYPES = (Buy.TYPE_CASHBACK, Buy.TYPE_FEE_REBATE)
 
     # Units leave the taxpayer without a gain or loss being realized: a gift isn't a
     #  realization event for the donor, transfers between spouses fall under IRC 1041, a
@@ -59,8 +62,6 @@ class TaxCalculatorUS(TaxCalculator):
         self.standing_orders = []
         self.identifications = {}
         self.lot_log = []
-        # Gift-Received rows without donor details, kept at FMV basis (rebates, rewards)
-        self.fmv_gifts = []
         self._phase = None
         self._record_events = True
         self._moved_by_record = {}
@@ -104,14 +105,6 @@ class TaxCalculatorUS(TaxCalculator):
                   if isinstance(te, TaxEventCapitalGainsUS)]
         self.reconciliation = Reconciliation(
             self.us_records.forms_1099da if self.us_records else [], events)
-        if self.fmv_gifts:
-            self.warn("%d Gift-Received records have no donor details, so they're treated as "
-                      "receipts at fair market value basis (%s), not income: right for card "
-                      "rebates and rewards. Add donor_basis:<value> and donor_acquired:<date> "
-                      "to the note of any gift from a person" % (
-                          len(self.fmv_gifts), config.sym() + '{:0,.2f}'.format(
-                              sum((lot.cost for lot in self.fmv_gifts), Decimal(0)))))
-
         for failure in self.reconciliation.failures:
             self.fail(failure)
         for warning in self.reconciliation.warnings:
@@ -215,19 +208,12 @@ class TaxCalculatorUS(TaxCalculator):
         measured from FMV with the holding period starting at the gift.
         """
         tokens = {name: note_token(pattern, t.note) for name, pattern in GIFT_TOKENS.items()}
-        if tokens['donor_basis'] is None and tokens['donor_acquired'] is None:
-            # No donor: a rebate, reward or bonus, received at FMV basis and not income
-            if self._record_events:
-                self.fmv_gifts.append(copy.copy(lot))
-            if config.debug:
-                print("%slots:   gift without donor details, FMV basis %s" % (Fore.YELLOW, lot))
-            return
-
         if tokens['donor_basis'] is None or tokens['donor_acquired'] is None:
-            self.fail("Gift-Received of %s %s [TID:%s] needs both donor_basis:<value> and "
+            self.fail("Gift-Received of %s %s [TID:%s] needs donor_basis:<value> and "
                       "donor_acquired:<date> in its note, using its fair market value as "
-                      "basis" % ('{:0,f}'.format(t.quantity.normalize()), t.asset,
-                                 t._format_tid()))
+                      "basis. Record a rebate or reward as Cashback, or a referral or sign-up "
+                      "bonus as Referral" % ('{:0,f}'.format(t.quantity.normalize()), t.asset,
+                                             t._format_tid()))
             return
 
         fmv = lot.cost
@@ -434,6 +420,19 @@ class TaxCalculatorUS(TaxCalculator):
 
     def process_disposal(self, t, cost, fees):
         raise NotImplementedError("US disposals are matched to lots")
+
+    def process_income(self):
+        super(TaxCalculatorUS, self).process_income()
+
+        for t in self.transactions:
+            if t.t_type in self.REBATE_TYPES and t.is_crypto():
+                tax_event = TaxEventRebate(t)
+                self.tax_events[self.which_tax_year(tax_event.date)].append(tax_event)
+
+    def calculate_income(self, tax_year):
+        super(TaxCalculatorUS, self).calculate_income(tax_year)
+        self.tax_report[tax_year]['Rebates'] = sorted(
+            te for te in self.tax_events.get(tax_year, []) if isinstance(te, TaxEventRebate))
 
     def calculate_capital_gains(self, tax_year):
         cgains = CalculateCapitalGainsUS(tax_year, self.tax_rules)
@@ -695,6 +694,18 @@ class CalculateCapitalGainsUS(CalculateCapitalGains):
 
     def non_sale(self, te):
         self.non_sales.setdefault(te.type, []).append(te)
+
+
+class TaxEventRebate(TaxEvent):
+    """Cashback or a fee rebate: acquired at FMV basis, not income."""
+
+    def __init__(self, b):
+        super(TaxEventRebate, self).__init__(b.timestamp, b.asset)
+        self.type = b.t_type
+        self.quantity = b.quantity
+        self.wallet = b.wallet
+        self.note = b.note
+        self.amount = (b.cost or Decimal(0)).quantize(PRECISION)
 
 
 class TaxEventNonSale(TaxEvent):

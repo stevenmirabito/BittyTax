@@ -595,6 +595,26 @@ class ReportLogUS(ReportLog):
             self.reconciliation(self.tax_report[tax_year].get('Reconciliation'))
             self.non_sales(cgains)
 
+    def income(self, tax_year):
+        super(ReportLogUS, self).income(tax_year)
+
+        rebates = self.tax_report[tax_year].get('Rebates', [])
+        if not rebates:
+            return
+
+        print("\n%sCashback and Rebates (not income, basis is FMV when received)\n" % Fore.CYAN)
+        print("%s%s %-10s %-16s %-10s %25s %13s" % (
+            Fore.YELLOW, 'Asset'.ljust(self.MAX_SYMBOL_LEN), 'Date', 'Wallet', 'Type',
+            'Quantity', 'Basis'))
+        for te in rebates:
+            print("%s%s %-10s %-16s %-10s %25s %13s" % (
+                Fore.WHITE, te.asset.ljust(self.MAX_SYMBOL_LEN), self.format_date(te.date),
+                te.wallet[:16], te.type, self.format_quantity(te.quantity),
+                self.format_value(te.amount)))
+        print("%s%s %13s" % (Fore.YELLOW + Style.BRIGHT, 'Total'.ljust(91),
+                             self.format_value(sum((te.amount for te in rebates), 0))) +
+              Style.NORMAL)
+
     def _totals_row(self, label, totals, header):
         print("%s%s" % (Fore.YELLOW, '_' * len(header)))
         print("%s%-67s %13s %13s %4s %13s %s%13s" % (

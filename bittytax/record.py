@@ -14,6 +14,9 @@ class TransactionRecord(object):
     TYPE_INCOME = 'Income'
     TYPE_GIFT_RECEIVED = 'Gift-Received'
     TYPE_AIRDROP = 'Airdrop'
+    TYPE_CASHBACK = 'Cashback'
+    TYPE_FEE_REBATE = 'Fee-Rebate'
+    TYPE_REFERRAL = 'Referral'
     TYPE_WITHDRAWAL = 'Withdrawal'
     TYPE_SPEND = 'Spend'
     TYPE_GIFT_SENT = 'Gift-Sent'
@@ -30,6 +33,9 @@ class TransactionRecord(object):
                  TYPE_DIVIDEND,
                  TYPE_GIFT_RECEIVED,
                  TYPE_AIRDROP,
+                 TYPE_CASHBACK,
+                 TYPE_FEE_REBATE,
+                 TYPE_REFERRAL,
                  TYPE_WITHDRAWAL,
                  TYPE_SPEND,
                  TYPE_GIFT_SENT,

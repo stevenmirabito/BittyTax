@@ -17,6 +17,9 @@ class TransactionOutRecord(object):
     TYPE_INCOME = TransactionRecord.TYPE_INCOME
     TYPE_GIFT_RECEIVED = TransactionRecord.TYPE_GIFT_RECEIVED
     TYPE_AIRDROP = TransactionRecord.TYPE_AIRDROP
+    TYPE_CASHBACK = TransactionRecord.TYPE_CASHBACK
+    TYPE_FEE_REBATE = TransactionRecord.TYPE_FEE_REBATE
+    TYPE_REFERRAL = TransactionRecord.TYPE_REFERRAL
     TYPE_WITHDRAWAL = TransactionRecord.TYPE_WITHDRAWAL
     TYPE_SPEND = TransactionRecord.TYPE_SPEND
     TYPE_GIFT_SENT = TransactionRecord.TYPE_GIFT_SENT
@@ -34,7 +37,10 @@ class TransactionOutRecord(object):
                  TYPE_DIVIDEND,
                  TYPE_INCOME,
                  TYPE_GIFT_RECEIVED,
-                 TYPE_AIRDROP)
+                 TYPE_AIRDROP,
+                 TYPE_CASHBACK,
+                 TYPE_FEE_REBATE,
+                 TYPE_REFERRAL)
 
     SELL_TYPES = (TYPE_WITHDRAWAL,
                   TYPE_SPEND,

@@ -28,7 +28,9 @@
 ### Added
 - US tax calculator: per-wallet cost basis from 2025 (Treas. Reg. 1.1012-1(j)), with lots traced through transfers between wallets.
 - US tax calculator: short-term/long-term holding periods and Form 8949 boxes (A-F before 2025, G-L after).
-- US tax calculator: carryover and dual basis for gifts received; gifts without donor details (rebates, rewards) keep FMV basis and are not income.
+- US tax calculator: carryover and dual basis for gifts received.
+- Accounting tool: Cashback, Fee-Rebate and Referral transaction types (as in upstream v0.6.0). Under US rules cashback and fee rebates are received at FMV basis and are not income, and referrals are income.
+- Crypto.com parser: card cashback and reimbursements are Cashback, referral bonuses are Referral.
 - US tax calculator: standing orders and specific identification of lots (Notice 2025-7 / 2026-20).
 - Accounting tool: --export-8949 and --export-lots for US tax rules.
 - Accounting tool: 'Standing Orders', 'Identifications' and '1099-DA' workbook sheets for US tax rules, 1099-DA rows set Form 8949 columns (d)-(g) and are reconciled with your records.

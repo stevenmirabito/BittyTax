@@ -289,10 +289,14 @@ class Buy(TransactionBase):
     TYPE_INCOME = TransactionRecord.TYPE_INCOME
     TYPE_GIFT_RECEIVED = TransactionRecord.TYPE_GIFT_RECEIVED
     TYPE_AIRDROP = TransactionRecord.TYPE_AIRDROP
+    TYPE_CASHBACK = TransactionRecord.TYPE_CASHBACK
+    TYPE_FEE_REBATE = TransactionRecord.TYPE_FEE_REBATE
+    TYPE_REFERRAL = TransactionRecord.TYPE_REFERRAL
     TYPE_TRADE = TransactionRecord.TYPE_TRADE
 
     ACQUISITION_TYPES = {TYPE_MINING, TYPE_STAKING, TYPE_INTEREST, TYPE_DIVIDEND,
-                         TYPE_INCOME, TYPE_GIFT_RECEIVED, TYPE_AIRDROP, TYPE_TRADE}
+                         TYPE_INCOME, TYPE_GIFT_RECEIVED, TYPE_AIRDROP, TYPE_CASHBACK,
+                         TYPE_FEE_REBATE, TYPE_REFERRAL, TYPE_TRADE}
 
     def __init__(self, t_type, buy_quantity, buy_asset, buy_value):
         super(Buy, self).__init__(t_type, buy_asset, buy_quantity)

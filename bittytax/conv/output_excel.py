@@ -104,7 +104,10 @@ class Worksheet(object):
                 TransactionOutRecord.TYPE_DIVIDEND,
                 TransactionOutRecord.TYPE_INCOME,
                 TransactionOutRecord.TYPE_GIFT_RECEIVED,
-                TransactionOutRecord.TYPE_AIRDROP)
+                TransactionOutRecord.TYPE_AIRDROP,
+                TransactionOutRecord.TYPE_CASHBACK,
+                TransactionOutRecord.TYPE_FEE_REBATE,
+                TransactionOutRecord.TYPE_REFERRAL)
 
     SELL_LIST = (TransactionOutRecord.TYPE_WITHDRAWAL,
                  TransactionOutRecord.TYPE_SPEND,

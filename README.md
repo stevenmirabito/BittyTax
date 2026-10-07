@@ -69,6 +69,9 @@ A transaction record is represented as a row of data which contains the followin
 | | `Income` | Tokens received as other income |
 | | `Gift-Received` | Tokens received as a gift |
 | | `Airdrop` | Tokens received from an airdrop |
+| | `Cashback` | Tokens received as cashback or a rebate on a purchase |
+| | `Fee-Rebate` | Tokens received as a rebate of fees paid |
+| | `Referral` | Tokens received as a referral or sign-up bonus |
 | | `Withdrawal` | Tokens withdrawn from a wallet you own |
 | | `Spend` | Tokens spent on goods or services |
 | | `Gift-Sent` | Tokens sent as a gift |
@@ -101,6 +104,9 @@ The transaction Type dictates which fields in the row are required, either (M)an
 | `Income` | M | M | O |||| O | O | O| O | M | O |
 | `Gift-Received` | M | M | O |||| O | O | O| O | M | O |
 | `Airdrop` | M | M | O |||| O | O | O| O | M | O |
+| `Cashback` | M | M | O |||| O | O | O| O | M | O |
+| `Fee-Rebate` | M | M | O |||| O | O | O| O | M | O |
+| `Referral` | M | M | O |||| O | O | O| O | M | O |
 | `Withdrawal` |||| M | M |   | O | O |   | O | M | O |
 | `Spend` |||| M | M | O | O | O | O | O | M | O |
 | `Gift-Sent` |||| M | M | O | O | O | O | O | M | O |
@@ -183,6 +189,19 @@ The `Airdrop` transaction type is used to record cryptoassets tokens received fr
 Airdrop tokens are not taxed as income, as it is assumed that nothing was done in return for them.
 
 If the airdrop distribution was dependant upon providing a service or other conditions, then they should be recorded as `Income`. See [HMRC guidance on airdrops](https://www.gov.uk/hmrc-internal-manuals/cryptoassets-manual/crypto21250). 
+
+### Cashback
+The `Cashback` transaction type records tokens received as cashback or a rebate on something you bought, for example crypto card cashback or a subscription rebate.
+
+Cashback is not taxed as income. Under US rules it reduces the price of the purchase, and the tokens' cost basis is their value when received.
+
+### Fee-Rebate
+The `Fee-Rebate` transaction type records tokens received as a rebate of fees you paid, for example an exchange refunding trading fees. It is treated the same as `Cashback`.
+
+### Referral
+The `Referral` transaction type records tokens received for referring someone, or as a sign-up or promotional bonus.
+
+Under US rules a referral is ordinary income at its value when received. Under UK rules it is currently treated like `Gift-Received` (not income).
 
 ### Spend
 A `Spend` is a disposal transaction record, which is used to capture the spending of tokens on goods or services.
