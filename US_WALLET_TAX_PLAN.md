@@ -1,6 +1,6 @@
 # Plan: Per-Wallet Cost Basis for `US_INDIVIDUAL` (2025+)
 
-Status: draft rev. 2, 2026-10-07, against branch `2022-combined` (`9110f88`). Section 9 records the decisions made so far.
+Status: **implemented** (phases 1–6) on `2022-combined`; see §11 for where the implementation differs from this plan. Section 9 records the decisions.
 
 ## 1. What changed in the rules
 
@@ -274,6 +274,19 @@ Phases 1–3 are enough to produce a correct 2025 return for records without an 
 - Rev. Proc. 2024-28 `global_allocation`/`specific_allocation` transition modes (deferred).
 - Inherited assets (§1014 step-up). Wash sales do not apply to digital assets under current law, so there is nothing to implement for them.
 - Enforcing broker-communicated identification for broker-held units after the Notice 2026-20 relief ends (2027+), unless the relief is extended again.
+
+## 11. Implementation notes
+
+What was built differs from the plan above in these places:
+
+- **Naive timestamps stay UTC** (§5.4). The plan said to read timestamps with no zone as Pacific time. Conversion-tool output and existing records rely on UTC, so only local time (year boundaries, holding periods, the cutover) uses `us_timezone`. `Config.set_tax_rules` still runs before import, because records are converted to local time as they are created.
+- **Config keys** (§3.5): `transfer_match_window_hours` (number) and `transfer_match_tolerance` (fraction, default 0.005), instead of `24h` / `0.5%`. All US keys are documented in `bittytax/config/bittytax.conf`.
+- **Lot IDs** are `<asset>:<wallet acquired in>:<UTC timestamp>`, with `#n` added only for acquisitions in the same second. They don't include the TID, so adding other records doesn't change them. `--export-lots` lists them for specific identification.
+- **Transitions are traced only**: the allocation modes stay deferred (§10). The tracing pass reports its own shortfalls, labelled `[tracing]`, separately from the universal pass (`[universal]`) and the per-wallet pass (`[per-wallet]`).
+- **Lot selection only applies from the cutover.** Before it, both passes use FIFO. Fragments of one lot taken in a single disposal are reported as one Form 8949 row when they fall in the same box.
+- **1099-DA input** is a normalized CSV (`Wallet, Asset, Date Sold, Quantity, Proceeds, Cost Basis, Date Acquired`), because brokers' layouts differ. Rows are compared per wallet, asset and sale date, with proceeds net of sale fees.
+- **`transfers_include`** has no effect on US lot tracking, since transfers always move lots. If it is set, the importer still treats transfer fees as non-disposals.
+- **Integrity check (US)**: lot shortfalls, unlinked transfers, gifts without donor details and per-wallet audit mismatches all fail the check. `--skipint` reports them and continues.
 
 ## Sources
 

@@ -1,6 +1,10 @@
 # Change Log
 ## [Unreleased]
 ### Fixed
+- US tax calculator: a buy later on the same day is no longer matched to an earlier sell.
+- US tax calculator: units sold that can't be traced to an acquisition fail the integrity check, instead of taking an average cost.
+- US tax calculator: Gift-Sent, Gift-Spouse, Charity-Sent and Lost are not treated as sales.
+- US tax calculator: tax years and holding periods use US local time, not Europe/London.
 - Binance parser: handle symbols with leading digit.
 - Bitfinex parser: handle '-' in FEE PERC column. ([#197](https://github.com/BittyTax/BittyTax/issues/197))
 - Binance parser: handle a Distribution which is negative. ([#179](https://github.com/BittyTax/BittyTax/issues/179))
@@ -22,6 +26,12 @@
 - Electrum parser: handle optional fees.
 - Accounting tool: Lost transactions create wrong cost basis. ([#247](https://github.com/BittyTax/BittyTax/issues/247))
 ### Added
+- US tax calculator: per-wallet cost basis from 2025 (Treas. Reg. 1.1012-1(j)), with lots traced through transfers between wallets.
+- US tax calculator: short-term/long-term holding periods and Form 8949 boxes (A-F before 2025, G-L after).
+- US tax calculator: carryover and dual basis for gifts received.
+- US tax calculator: standing orders and specific identification of lots (Notice 2025-7 / 2026-20).
+- Accounting tool: --export-8949, --export-lots and --reconcile-1099da for US tax rules.
+- Accounting tool: pytest test suite with US and UK regression baselines.
 - Conversion tool: generic parser added to support import from CryptoCredible tool.
 - Conversion tool: added parser for SnowTrace explorer.
 - Conversion tool: added parser for PolygonScan explorer.
@@ -44,6 +54,7 @@
 - Conversion tool: added parser for CoinList exchange.
 - Conversion tool: added parser for Koinly accounting data.
 ### Changed
+- Reports: US reports use their own templates, the UK reports are restored to the UK layout.
 - Binance parser: performance improvements for large data sets.
 - Coinbase Pro parser: performance improvements for large data sets.
 - GateHub parser: performance improvements for large data sets.
