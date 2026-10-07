@@ -23,9 +23,6 @@
                 padding-top: 10pt;
                 text-align: center;
             }
-            .subtotal_row {
-                font-weight: bold;
-            }
             .total_row {
                 font-weight: bold;
                 padding-top: 2px;
@@ -38,11 +35,6 @@
             }
             h1 {
                 text-decoration: underline;
-            }
-            h4 {
-                border-bottom-color: black;
-                border-bottom-style: solid;
-                border-bottom-width: 0.1px;
             }
         </style>
     </head>
@@ -85,10 +77,10 @@
                 <div><pdf:nextpage /></div>
             {% endif %}
             {% for tax_year in tax_report|sort %}
-                <!-- <h1>Tax Year -
+                <h1>Tax Year -
                 {{config.format_tax_year(tax_year)}}
                 ({{config.get_tax_year_start(tax_year)|datefilter2}} to {{config.get_tax_year_end(tax_year)|datefilter2}})
-                </h1> -->
+                </h1>
                 {% include "capital_gains.html" %}
                 {% if not args.summary %}
                     {% include "income.html" %}

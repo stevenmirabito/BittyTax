@@ -22,26 +22,8 @@ class ReportPdf(object):
     TEMPLATE_FILE = 'tax_report.html'
 
     def __init__(self, progname, audit, tax_report, price_report, holdings_report, args):
-        self.env = jinja2.Environment(loader=jinja2.PackageLoader('bittytax', 'templates'))
         self.filename = self.get_output_filename(args.output_filename, self.FILE_EXTENSION)
-
-        self.env.filters['datefilter'] = self.datefilter
-        self.env.filters['datefilter2'] = self.datefilter2
-        self.env.filters['quantityfilter'] = self.quantityfilter
-        self.env.filters['valuefilter'] = self.valuefilter
-        self.env.filters['ratefilter'] = self.ratefilter
-        self.env.filters['ratesfilter'] = self.ratesfilter
-        self.env.filters['nowrapfilter'] = self.nowrapfilter
-
-        template = self.env.get_template(self.TEMPLATE_FILE)
-        html = template.render({'date': datetime.now(),
-                                'author': '{} v{}'.format(progname, __version__),
-                                'config': config,
-                                'audit': audit,
-                                'tax_report': tax_report,
-                                'price_report': price_report,
-                                'holdings_report': holdings_report,
-                                'args': args})
+        html = self.render_html(progname, audit, tax_report, price_report, holdings_report, args)
 
         with ProgressSpinner():
             pdf_file = open(self.filename, 'w+b')
@@ -53,6 +35,35 @@ class ReportPdf(object):
         else:
             print("%sERROR%s Failed to create PDF tax report", (
                 Back.RED+Fore.BLACK, Back.RESET+Fore.RED))
+
+    @classmethod
+    def render_html(cls, progname, audit, tax_report, price_report, holdings_report, args):
+        env = jinja2.Environment(loader=cls.get_loader(args.tax_rules))
+        env.filters['datefilter'] = cls.datefilter
+        env.filters['datefilter2'] = cls.datefilter2
+        env.filters['quantityfilter'] = cls.quantityfilter
+        env.filters['valuefilter'] = cls.valuefilter
+        env.filters['ratefilter'] = cls.ratefilter
+        env.filters['ratesfilter'] = cls.ratesfilter
+        env.filters['nowrapfilter'] = cls.nowrapfilter
+
+        template = env.get_template(cls.TEMPLATE_FILE)
+        return template.render({'date': datetime.now(),
+                                'author': '{} v{}'.format(progname, __version__),
+                                'config': config,
+                                'audit': audit,
+                                'tax_report': tax_report,
+                                'price_report': price_report,
+                                'holdings_report': holdings_report,
+                                'args': args})
+
+    @staticmethod
+    def get_loader(tax_rules):
+        shared = jinja2.PackageLoader('bittytax', 'templates')
+        if tax_rules == config.TAX_RULES_US_INDIVIDUAL:
+            # US templates override the shared ones, anything not overridden falls through
+            return jinja2.ChoiceLoader([jinja2.PackageLoader('bittytax', 'templates/us'), shared])
+        return shared
 
     @staticmethod
     def datefilter(date):

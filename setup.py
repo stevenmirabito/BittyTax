@@ -56,7 +56,7 @@ setup(
               'bittytax.conv.parsers',
               'bittytax.conv.mergers',
               'bittytax.price'],
-    package_data={'bittytax': ['templates/*.html']},
+    package_data={'bittytax': ['templates/*.html', 'templates/us/*.html']},
     install_requires=[
         'python-dateutil>=2.7.0',
         'requests',
