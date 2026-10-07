@@ -299,6 +299,8 @@ class Buy(TransactionBase):
         self.acquisition = bool(self.t_type in self.ACQUISITION_TYPES)
         self.cost = None
         self.cost_fixed = False
+        # Value as recorded, kept for deposits where it can declare the basis of external units
+        self.declared_value = buy_value
 
         if self.acquisition and buy_value is not None:
             self.cost = buy_value

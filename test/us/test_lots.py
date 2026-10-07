@@ -75,7 +75,7 @@ def test_sell_more_than_held_is_an_integrity_failure(tmp_path):
         'Trade,30000,USD,,1.5,BTC,30000,,,,Coinbase,2024-03-01T17:00:00Z,',
     ])
     tax = run_tax(path, config.TAX_RULES_US_INDIVIDUAL)
-    assert len(tax.integrity_failures) == 1
+    assert len([f for f in tax.integrity_failures if f.startswith('[universal]')]) == 1
     rows = gains_rows(tax)
     assert sorted([r[4:6] + r[9:] for r in rows], key=str) == sorted(
         [['1', '10000.00', '2023-01-01'], ['0.5', '0.00', None]], key=str)

@@ -204,7 +204,9 @@ def do_integrity_check(audit, tax):
         transfer_mismatch = False
 
     pools_match = audit.compare_pools(holdings)
-    lot_failures = getattr(tax, 'integrity_failures', [])
+    lot_failures = list(getattr(tax, 'integrity_failures', []))
+    if getattr(tax, 'ledger', None) is not None:
+        lot_failures += audit.compare_wallets(tax.ledger.balances())
 
     if not pools_match or transfer_mismatch or lot_failures:
         int_passed = False

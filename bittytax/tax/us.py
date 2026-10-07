@@ -4,20 +4,33 @@
 
 import sys
 import copy
+from datetime import datetime
 from decimal import Decimal
 
 from colorama import Fore, Back
 from tqdm import tqdm
+import dateutil.parser
 
 from ..config import config
 from ..transactions import Buy, Sell
 from .base import TaxCalculator, TaxEvent, TaxEventCapitalGains
 from .lots import Lot, WalletLedger, FifoSelector, Shortfall
+from .transfers import link_transfers, acquired_date
 
 PRECISION = Decimal('0.00')
 
 
 class TaxCalculatorUS(TaxCalculator):
+    """US tax rules.
+
+    Before the cutover (2025-01-01) every wallet is pooled into one FIFO queue per asset, the
+    universal method used for returns already filed. From the cutover, Treas. Reg. 1.1012-1(j)
+    requires basis to be identified wallet by wallet: lots are held in the wallet they were
+    acquired in, follow transfers between wallets, and FIFO applies within each wallet.
+
+    No Rev. Proc. 2024-28 allocation is applied: the lots in each wallet at the cutover are
+    found by replaying the earlier history wallet by wallet (actual tracing).
+    """
     DISPOSAL_FIFO = FifoSelector.name
 
     INCOME_TYPES = (Buy.TYPE_MINING, Buy.TYPE_STAKING, Buy.TYPE_DIVIDEND, Buy.TYPE_INTEREST,
@@ -26,13 +39,43 @@ class TaxCalculatorUS(TaxCalculator):
     def __init__(self, transactions, tax_rules):
         super(TaxCalculatorUS, self).__init__(transactions, tax_rules)
         self.ordered = []
+        self.links = None
         self.ledger = None
+        self.transition = None
         self.selector = FifoSelector()
         self.integrity_failures = []
+        self.warnings = []
+        self._phase = None
+        self._record_events = True
+        self._moved_by_record = {}
+
+    @staticmethod
+    def get_cutover():
+        value = config.us_wallet_cutover
+        if isinstance(value, str):
+            value = dateutil.parser.parse(value).date()
+        return datetime(value.year, value.month, value.day, tzinfo=config.TZ_LOCAL)
 
     def calculate(self, skip_integrity_check=False):
         self.prepare_transactions()
-        self.ledger = self.replay(self.ordered, WalletLedger(per_wallet=False))
+        self.links = link_transfers(self.ordered)
+        for error in self.links.errors:
+            self.fail(error)
+
+        cutover = self.get_cutover()
+        before = [t for t in self.ordered if t.timestamp < cutover]
+        after = [t for t in self.ordered if t.timestamp >= cutover]
+
+        # Gains before the cutover, as reported under the universal method
+        universal = self.replay(before, WalletLedger(per_wallet=False), 'universal', True)
+
+        # Trace the same history wallet by wallet, only to find each wallet's lots at the cutover
+        traced = self.replay(before, WalletLedger(per_wallet=True), 'tracing', False)
+        self.transition = Transition(cutover, universal, traced)
+        for failure in self.transition.failures:
+            self.fail(failure)
+
+        self.ledger = self.replay(after, traced, 'per-wallet', True)
         self.holdings = self.ledger.holdings()
 
     def prepare_transactions(self):
@@ -43,10 +86,28 @@ class TaxCalculatorUS(TaxCalculator):
         if config.debug:
             print("%sprepare: total transactions=%d" % (Fore.CYAN, len(self.ordered)))
 
-    def replay(self, transactions, ledger):
+    def fail(self, message):
+        message = "%s%s" % ("[%s] " % self._phase if self._phase else '', message)
+        self.integrity_failures.append(message)
+        tqdm.write("%sERROR%s %s" % (Back.RED+Fore.BLACK, Back.RESET+Fore.RED, message))
+
+    def warn(self, message):
+        self.warnings.append(message)
+        tqdm.write("%sWARNING%s %s" % (Back.YELLOW+Fore.BLACK, Back.RESET+Fore.YELLOW, message))
+
+    def replay(self, transactions, ledger, phase, record_events):
+        # Each pass splits its own copies, the transactions are shared between passes
+        transactions = copy.deepcopy(transactions)
+        self._phase = phase
+        self._record_events = record_events
+        self._moved_by_record = {}
+
+        if config.debug:
+            print("%slots: %s pass" % (Fore.CYAN, phase))
+
         for t in tqdm(transactions,
                       unit='t',
-                      desc="%sprocess lots%s" % (Fore.CYAN, Fore.GREEN),
+                      desc="%sprocess lots (%s)%s" % (Fore.CYAN, phase, Fore.GREEN),
                       disable=bool(config.debug or not sys.stdout.isatty())):
             if config.debug:
                 print("%slots: %s" % (Fore.GREEN, t))
@@ -54,12 +115,18 @@ class TaxCalculatorUS(TaxCalculator):
             if isinstance(t, Buy):
                 if t.acquisition:
                     self.add_lot(ledger, t)
+                elif t.t_type == Buy.TYPE_DEPOSIT and ledger.per_wallet:
+                    self.deposit(ledger, t)
             elif isinstance(t, Sell):
                 if t.disposal:
                     self.dispose(ledger, t)
-                elif t.t_type != Sell.TYPE_WITHDRAWAL:
+                elif t.t_type == Sell.TYPE_WITHDRAWAL:
+                    if ledger.per_wallet:
+                        self.withdraw(ledger, t)
+                else:
                     self.remove_without_disposal(ledger, t)
 
+        self._phase = None
         return ledger
 
     def add_lot(self, ledger, t):
@@ -67,16 +134,18 @@ class TaxCalculatorUS(TaxCalculator):
         ledger.add(lot)
         if config.debug:
             print("%slots:   add %s" % (Fore.YELLOW, lot))
+        return lot
 
-    def take_lots(self, ledger, t):
+    def take_lots(self, ledger, t, quantity=None):
+        quantity = t.quantity if quantity is None else quantity
         try:
-            return ledger.remove(t.wallet, t.asset, t.quantity, self.selector, t), Decimal(0)
+            return ledger.remove(t.wallet, t.asset, quantity, self.selector, t), Decimal(0)
         except Shortfall as e:
-            self.integrity_failures.append(e)
-            tqdm.write("%sWARNING%s Insufficient %s in %s for %s, %s units have no cost basis" % (
-                Back.YELLOW+Fore.BLACK, Back.RESET+Fore.YELLOW, t.asset,
-                'holdings' if not ledger.per_wallet else t.wallet, t._format_tid(),
-                '{:0,f}'.format((e.requested - e.available).normalize())))
+            self.fail("Insufficient %s in %s for %s [TID:%s], %s units can't be traced to an "
+                      "acquisition" % (t.asset,
+                                       t.wallet if ledger.per_wallet else 'any wallet',
+                                       t.t_type, t._format_tid(),
+                                       '{:0,f}'.format((e.requested - e.available).normalize())))
             return e.taken, e.requested - e.available
 
     def dispose(self, ledger, t):
@@ -87,22 +156,71 @@ class TaxCalculatorUS(TaxCalculator):
             lots.append(Lot(t.asset, t.wallet, unmatched, Decimal(0), Decimal(0), None,
                             None, None))
 
+        if not self._record_events:
+            return
+
         for lot, s in self.split_sell(t, lots):
             tax_event = TaxEventCapitalGainsUS(self.selector.name, lot, s)
             self.tax_events[self.which_tax_year(tax_event.date)].append(tax_event)
             if config.debug:
                 print("%slots:   %s <- %s" % (Fore.CYAN, tax_event, lot))
 
+    def withdraw(self, ledger, t):
+        deposit = self.links.deposit(t)
+        if deposit is None:
+            lots, _ = self.take_lots(ledger, t)
+            self.fail("Withdrawal of %s %s from %s [TID:%s] has no matching Deposit, record "
+                      "where it went (e.g. Gift-Sent, Spend) or add the Deposit" % (
+                          '{:0,f}'.format(t.quantity.normalize()), t.asset, t.wallet,
+                          t._format_tid()))
+            return
+
+        moved, _ = self.take_lots(ledger, t, deposit.quantity)
+        if t.quantity > deposit.quantity:
+            # Taken from the amount sent, record it as a fee to treat it as a disposal
+            short = t.quantity - deposit.quantity
+            removed, _ = self.take_lots(ledger, t, short)
+            carry_basis(moved, removed)
+            if self._record_events:
+                self.warn("Deposit [TID:%s] is %s %s less than Withdrawal [TID:%s], the "
+                          "difference is removed and its basis carried with the transfer" % (
+                              deposit._format_tid(), '{:0,f}'.format(short.normalize()),
+                              t.asset, t._format_tid()))
+
+        ledger.move(moved, deposit.wallet, t.timestamp)
+        self._moved_by_record[id(t.t_record)] = moved
+        if config.debug:
+            for lot in moved:
+                print("%slots:   move %s" % (Fore.YELLOW, lot))
+
+    def deposit(self, ledger, t):
+        if self.links.is_linked(t):
+            # The lots moved when the withdrawal was processed
+            return
+
+        acquired = acquired_date(t)
+        if acquired is not None and t.declared_value is not None:
+            # Units from outside the records, with their basis declared in the record
+            lot = self.add_lot(ledger, t)
+            lot.cost = t.declared_value
+            lot.acquired = acquired
+            return
+
+        self.add_lot(ledger, t)
+        self.fail("Deposit of %s %s to %s [TID:%s] has no matching Withdrawal, add the "
+                  "Withdrawal, or declare its basis with a Buy Value and an "
+                  "acquired:<date> note" % ('{:0,f}'.format(t.quantity.normalize()),
+                                           t.asset, t.wallet, t._format_tid()))
+
     def remove_without_disposal(self, ledger, t):
         # e.g. a transfer fee which isn't treated as a disposal, its basis stays with the asset
-        lots, _ = self.take_lots(ledger, t)
-        basis = sum((lot.cost for lot in lots), Decimal(0))
-        fees = sum((lot.fees for lot in lots), Decimal(0))
-
-        remaining = FifoSelector.order(ledger.lots_in(t.wallet, t.asset))
-        if remaining:
-            remaining[0].cost += basis
-            remaining[0].fees += fees
+        removed, _ = self.take_lots(ledger, t)
+        moved = self._moved_by_record.get(id(t.t_record))
+        if moved:
+            carry_basis(moved, removed)
+        else:
+            remaining = FifoSelector.order(ledger.lots_in(t.wallet, t.asset))
+            carry_basis(remaining[:1], removed)
 
     @staticmethod
     def split_sell(s, lots):
@@ -119,6 +237,47 @@ class TaxCalculatorUS(TaxCalculator):
 
     def process_disposal(self, t, cost, fees):
         raise NotImplementedError("US disposals are matched to lots")
+
+
+def carry_basis(lots, removed):
+    """Add the basis of removed units to lots, in proportion to their quantity."""
+    cost = sum((lot.cost for lot in removed), Decimal(0))
+    fees = sum((lot.fees for lot in removed), Decimal(0))
+    total = sum((lot.quantity for lot in lots), Decimal(0))
+    if not total:
+        return
+
+    for lot in lots:
+        lot.cost += cost * lot.quantity / total
+        lot.fees += fees * lot.quantity / total
+
+
+class Transition(object):
+    """Lots per wallet at the cutover, compared against the universal method's remaining lots."""
+
+    def __init__(self, cutover, universal, traced):
+        self.cutover = cutover
+        self.lots = sorted((copy.copy(lot) for lot in traced.open_lots()),
+                           key=lambda lot: (lot.wallet, lot.asset, lot.acquired, lot.seq))
+        self.assets = {}
+        self.failures = []
+
+        for name, ledger in (('universal', universal), ('traced', traced)):
+            for lot in ledger.open_lots():
+                totals = self.assets.setdefault(lot.asset, {
+                    'universal_quantity': Decimal(0), 'universal_cost': Decimal(0),
+                    'traced_quantity': Decimal(0), 'traced_cost': Decimal(0)})
+                totals[name + '_quantity'] += lot.quantity
+                totals[name + '_cost'] += lot.cost + lot.fees
+
+        for asset, totals in sorted(self.assets.items()):
+            totals['basis_shift'] = totals['traced_cost'] - totals['universal_cost']
+            if totals['traced_quantity'] != totals['universal_quantity']:
+                self.failures.append(
+                    "%s held at the cutover differs between the universal (%s) and traced (%s) "
+                    "methods, check for unmatched transfers" % (
+                        asset, '{:0,f}'.format(totals['universal_quantity'].normalize()),
+                        '{:0,f}'.format(totals['traced_quantity'].normalize())))
 
 
 class TaxEventCapitalGainsUS(TaxEventCapitalGains):

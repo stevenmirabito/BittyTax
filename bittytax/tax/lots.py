@@ -141,6 +141,20 @@ class WalletLedger(object):
 
         return taken
 
+    def move(self, lots, to_wallet, timestamp):
+        for lot in lots:
+            lot.history.append((timestamp, lot.wallet, to_wallet))
+            lot.wallet = to_wallet
+            self.add(lot)
+
+    def balances(self):
+        balances = {}
+        for (wallet, asset), bucket in self.lots.items():
+            balance = sum((lot.quantity for lot in bucket), Decimal(0))
+            if balance:
+                balances[(wallet, asset)] = balance
+        return balances
+
     def open_lots(self):
         return [lot for bucket in self.lots.values() for lot in bucket if lot.quantity]
 

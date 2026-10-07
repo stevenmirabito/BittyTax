@@ -70,6 +70,9 @@ class Config(object):
         'coingecko_api_key': '',
         'coinbase_zero_fees_are_gifts': False,
         'us_timezone': 'America/Los_Angeles',
+        'us_wallet_cutover': '2025-01-01',
+        'transfer_match_window_hours': 24,
+        'transfer_match_tolerance': 0.005,
     }
 
     def __init__(self):

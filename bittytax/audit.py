@@ -142,6 +142,21 @@ class AuditRecords(object):
 
         return passed
 
+    def compare_wallets(self, balances):
+        """Compare audit balances with the ledger's lots held in each wallet."""
+        mismatches = []
+        keys = {(wallet, asset) for wallet in self.wallets for asset in self.wallets[wallet]
+                if asset not in config.fiat_list} | set(balances)
+
+        for wallet, asset in sorted(keys):
+            audit = self.wallets.get(wallet, {}).get(asset, Decimal(0))
+            held = balances.get((wallet, asset), Decimal(0))
+            if audit != held:
+                mismatches.append("%s:%s audit balance %s, lots held %s" % (
+                    wallet, asset, '{:0,f}'.format(audit.normalize()),
+                    '{:0,f}'.format(held.normalize())))
+        return mismatches
+
     def _log_failure(self, asset, audit, s104):
         failure = {}
         failure['asset'] = asset
