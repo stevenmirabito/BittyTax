@@ -69,3 +69,50 @@ class ExportForm8949(object):
 
         print("%sForm 8949 export created: %s%s" % (Fore.WHITE, Fore.YELLOW, filename))
         return filename
+
+
+class ExportLots(object):
+    """Per-wallet lot records: lots held at the cutover, every change since, and the lots
+    held now. Under Notice 2026-20 these books and records control the units sold."""
+
+    DEFAULT_FILENAME = 'BittyTax_Lots'
+    HEADER = ['Timestamp', 'Action', 'Wallet', 'To Wallet', 'Asset', 'Quantity',
+              'Cost Basis', 'Acquired', 'Lot ID', 'Method', 'TID']
+
+    def __init__(self, tax):
+        self.tax = tax
+
+    @staticmethod
+    def _row(timestamp, action, wallet, to_wallet, lot_id, asset, quantity, cost, acquired,
+             method='', tid=''):
+        return [timestamp.isoformat() if timestamp else '', action, wallet, to_wallet or '',
+                asset, '{:0f}'.format(quantity.normalize()), '{:0.2f}'.format(cost),
+                acquired.isoformat() if acquired else '', lot_id or '', method or '', tid]
+
+    def rows(self):
+        transition = self.tax.transition
+        for lot in transition.lots:
+            yield self._row(transition.cutover, 'Open', lot.wallet, None, lot.lot_id,
+                            lot.asset, lot.quantity, lot.cost + lot.fees, lot.acquired)
+
+        for entry in self.tax.lot_log:
+            yield self._row(entry['timestamp'], entry['action'], entry['wallet'],
+                            entry['to_wallet'], entry['lot_id'], entry['asset'],
+                            entry['quantity'], entry['cost'], entry['acquired'],
+                            entry['method'], entry['tid'])
+
+        for lot in sorted(self.tax.ledger.open_lots(),
+                          key=lambda lot: (lot.wallet, lot.asset, lot.acquired or 0, lot.seq)):
+            yield self._row(None, 'Held', lot.wallet, None, lot.lot_id, lot.asset,
+                            lot.quantity, lot.cost + lot.fees, lot.acquired)
+
+    def write_csv(self, filename=None):
+        filename = filename or unique_filename(self.DEFAULT_FILENAME)
+        with open(filename, 'w', newline='', encoding='utf-8') as csv_file:
+            writer = csv.writer(csv_file, lineterminator='\n')
+            writer.writerow(self.HEADER)
+            for row in self.rows():
+                writer.writerow(row)
+
+        print("%sLot records export created: %s%s" % (Fore.WHITE, Fore.YELLOW, filename))
+        return filename

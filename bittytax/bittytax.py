@@ -16,7 +16,7 @@ from .version import __version__
 from .config import config
 from .import_records import ImportRecords
 from .export_records import ExportRecords
-from .export_us import ExportForm8949
+from .export_us import ExportForm8949, ExportLots
 from .transactions import TransactionHistory
 from .audit import AuditRecords
 from .price.valueasset import ValueAsset
@@ -89,13 +89,19 @@ def main():
                         dest='export_8949',
                         action='store_true',
                         help="US tax rules only, export capital gains as Form 8949 rows (CSV)")
+    parser.add_argument('--export-lots',
+                        dest='export_lots',
+                        action='store_true',
+                        help="US tax rules only, export per-wallet lot records (CSV)")
 
     args = parser.parse_args()
     config.debug = args.debug
 
-    if args.export_8949 and args.tax_rules != config.TAX_RULES_US_INDIVIDUAL:
-        parser.error("argument --export-8949: requires --taxrules %s" %
-                     config.TAX_RULES_US_INDIVIDUAL)
+    for flag, enabled in (('--export-8949', args.export_8949),
+                          ('--export-lots', args.export_lots)):
+        if enabled and args.tax_rules != config.TAX_RULES_US_INDIVIDUAL:
+            parser.error("argument %s: requires --taxrules %s" % (
+                flag, config.TAX_RULES_US_INDIVIDUAL))
 
     if args.taxyear and not is_supported_year(args.taxyear, args.tax_rules):
         parser.error("argument -ty/--taxyear: tax year %d is not supported, "
@@ -146,6 +152,8 @@ def main():
 
     if args.export_8949:
         ExportForm8949(tax.tax_report).write_csv()
+    if args.export_lots:
+        ExportLots(tax).write_csv()
 
     if args.nopdf:
         report_log = ReportLogUS if args.tax_rules == config.TAX_RULES_US_INDIVIDUAL else ReportLog

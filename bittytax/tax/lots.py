@@ -36,6 +36,8 @@ class Lot(object):
         #  to work out a loss, and the date the holding period starts for a loss
         self.loss_basis = None
         self.gift_date = None
+        # How the lot was chosen by the disposal or transfer which just took it
+        self.method = None
 
     @classmethod
     def from_buy(cls, buy, ledger):

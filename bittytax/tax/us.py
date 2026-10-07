@@ -2,6 +2,7 @@
 # (c) Nano Nano Ltd 2019
 # (c) Steven Mirabito 2022
 
+import os
 import sys
 import copy
 from datetime import date, datetime
@@ -15,6 +16,8 @@ from ..config import config
 from ..transactions import Buy, Sell
 from .base import TaxCalculator, TaxEvent, TaxEventCapitalGains, CalculateCapitalGains
 from .lots import Lot, WalletLedger, FifoSelector, Shortfall
+from .lot_selection import (SpecificSelector, identification_key, load_identifications,
+                            load_standing_orders, standing_order_for)
 from .transfers import link_transfers, acquired_date, note_token, parse_date, GIFT_TOKENS
 
 PRECISION = Decimal('0.00')
@@ -51,9 +54,13 @@ class TaxCalculatorUS(TaxCalculator):
         self.selector = FifoSelector()
         self.integrity_failures = []
         self.warnings = []
+        self.standing_orders = []
+        self.identifications = {}
+        self.lot_log = []
         self._phase = None
         self._record_events = True
         self._moved_by_record = {}
+        self._broker_order_warnings = set()
 
     @staticmethod
     def get_cutover():
@@ -63,6 +70,7 @@ class TaxCalculatorUS(TaxCalculator):
         return datetime(value.year, value.month, value.day, tzinfo=config.TZ_LOCAL)
 
     def calculate(self, skip_integrity_check=False):
+        self.load_identification()
         self.prepare_transactions()
         self.links = link_transfers(self.ordered)
         for error in self.links.errors:
@@ -83,6 +91,27 @@ class TaxCalculatorUS(TaxCalculator):
 
         self.ledger = self.replay(after, traced, 'per-wallet', True)
         self.holdings = self.ledger.holdings()
+
+        for idents in self.identifications.values():
+            for ident in idents:
+                if not ident.used:
+                    self.warn("Identification on row %d of %s doesn't match a disposal or "
+                              "transfer of %s from %s at %s" % (
+                                  ident.row_num, config.us_identifications_file,
+                                  ident.asset, ident.wallet, ident.timestamp.isoformat()))
+
+    def load_identification(self):
+        try:
+            self.standing_orders = load_standing_orders(config.us_standing_orders)
+        except ValueError as e:
+            self.fail(str(e))
+
+        if config.us_identifications_file:
+            filename = os.path.expanduser(config.us_identifications_file)
+            try:
+                self.identifications = load_identifications(filename)
+            except (IOError, ValueError) as e:
+                self.fail("Specific identifications not loaded: %s" % e)
 
     def prepare_transactions(self):
         transactions = copy.deepcopy(self.transactions)
@@ -144,10 +173,25 @@ class TaxCalculatorUS(TaxCalculator):
         lot = Lot.from_buy(t, ledger)
         if t.t_type == Buy.TYPE_GIFT_RECEIVED:
             self.gift_basis(lot, t)
+        elif t.t_type == Buy.TYPE_DEPOSIT and acquired_date(t) is not None \
+                and t.declared_value is not None:
+            # Units from outside the records, with their basis declared in the record
+            lot.cost = t.declared_value
+            lot.acquired = acquired_date(t)
         ledger.add(lot)
+        self.log('Acquire', t, lot)
         if config.debug:
             print("%slots:   add %s" % (Fore.YELLOW, lot))
         return lot
+
+    def log(self, action, t, lot, to_wallet=None):
+        """Lot activity from the cutover: the per-wallet books and records."""
+        if self._phase == 'per-wallet' and self._record_events:
+            self.lot_log.append({
+                'timestamp': t.timestamp, 'action': action, 'wallet': t.wallet,
+                'to_wallet': to_wallet, 'asset': lot.asset, 'quantity': lot.quantity,
+                'cost': lot.cost + lot.fees, 'acquired': lot.acquired, 'lot_id': lot.lot_id,
+                'method': lot.method, 'tid': t._format_tid()})
 
     def gift_basis(self, lot, t):
         """Carryover basis for a gift received (IRC 1015, 1223(2)).
@@ -176,10 +220,66 @@ class TaxCalculatorUS(TaxCalculator):
             lot.gift_date = t.timestamp
 
     def take_lots(self, ledger, t, quantity=None):
+        """Lots for a disposal or transfer: identified units first, then the standing order
+        in force, otherwise FIFO. Before the cutover everything is FIFO."""
         quantity = t.quantity if quantity is None else quantity
+        if self._phase != 'per-wallet':
+            return self.remove_lots(ledger, t, quantity, self.selector)
+
+        taken = []
+        for ident in self.identifications.get(
+                identification_key(t.wallet, t.asset, t.timestamp), []):
+            if ident.used or quantity <= 0:
+                continue
+            ident.used = True
+
+            if ident.recorded_at > t.timestamp:
+                self.fail("Identification of lot %s for [TID:%s] was recorded after the "
+                          "transaction, it can't be used" % (ident.lot_id, t._format_tid()))
+                continue
+
+            selector = SpecificSelector(ident.lot_id)
+            try:
+                lots = ledger.remove(t.wallet, t.asset, min(ident.quantity, quantity),
+                                     selector, t)
+            except Shortfall as e:
+                self.fail("Lot %s identified for [TID:%s] holds only %s %s in %s" % (
+                    ident.lot_id, t._format_tid(), '{:0,f}'.format(e.available.normalize()),
+                    t.asset, t.wallet))
+                lots = e.taken
+
+            for lot in lots:
+                lot.method = selector.name
+                quantity -= lot.quantity
+            taken.extend(lots)
+
+        order = standing_order_for(self.standing_orders, t.wallet, t.timestamp)
+        if order is not None:
+            self.check_broker_standing_order(order, t)
+
+        lots, unmatched = self.remove_lots(ledger, t, quantity, order or self.selector)
+        return taken + lots, unmatched
+
+    def check_broker_standing_order(self, order, t):
+        # Notice 2026-20 lets broker customers identify units in their own records to the
+        #  end of 2026, after that the broker must be told
+        if (t.timestamp.year >= 2027 and t.wallet not in self._broker_order_warnings
+                and wallet_info(t.wallet).get('custody') == 'broker'):
+            self._broker_order_warnings.add(t.wallet)
+            self.warn("Standing order for %s is applied after 2026, broker-held units must "
+                      "be identified to the broker unless the relief is extended" % t.wallet)
+
+    def remove_lots(self, ledger, t, quantity, selector):
+        if quantity <= 0:
+            return [], Decimal(0)
         try:
-            return ledger.remove(t.wallet, t.asset, quantity, self.selector, t), Decimal(0)
+            lots = ledger.remove(t.wallet, t.asset, quantity, selector, t)
+            for lot in lots:
+                lot.method = selector.name
+            return lots, Decimal(0)
         except Shortfall as e:
+            for lot in e.taken:
+                lot.method = selector.name
             self.fail("Insufficient %s in %s for %s [TID:%s], %s units can't be traced to an "
                       "acquisition" % (t.asset,
                                        t.wallet if ledger.per_wallet else 'any wallet',
@@ -200,7 +300,8 @@ class TaxCalculatorUS(TaxCalculator):
             return
 
         for lot, s in self.split_sell(t, lots):
-            tax_event = TaxEventCapitalGainsUS(self.selector.name, lot, s)
+            self.log('Dispose', t, lot)
+            tax_event = TaxEventCapitalGainsUS(lot.method or self.selector.name, lot, s)
             self.tax_events[self.which_tax_year(tax_event.date)].append(tax_event)
             if config.debug:
                 print("%slots:   %s <- %s" % (Fore.CYAN, tax_event, lot))
@@ -221,6 +322,7 @@ class TaxCalculatorUS(TaxCalculator):
                           '{:0,f}'.format(t.quantity.normalize()), t.asset, t._format_tid()))
 
         for lot, s in self.split_sell(t, lots):
+            self.log(t.t_type, t, lot)
             tax_event = TaxEventNonSale(lot, s)
             self.tax_events[self.which_tax_year(tax_event.date)].append(tax_event)
             if config.debug:
@@ -248,6 +350,9 @@ class TaxCalculatorUS(TaxCalculator):
                               deposit._format_tid(), '{:0,f}'.format(short.normalize()),
                               t.asset, t._format_tid()))
 
+        for lot in moved:
+            self.log('Transfer', t, lot, deposit.wallet)
+            lot.method = None
         ledger.move(moved, deposit.wallet, t.timestamp)
         self._moved_by_record[id(t.t_record)] = moved
         if config.debug:
@@ -259,15 +364,10 @@ class TaxCalculatorUS(TaxCalculator):
             # The lots moved when the withdrawal was processed
             return
 
-        acquired = acquired_date(t)
-        if acquired is not None and t.declared_value is not None:
-            # Units from outside the records, with their basis declared in the record
-            lot = self.add_lot(ledger, t)
-            lot.cost = t.declared_value
-            lot.acquired = acquired
+        self.add_lot(ledger, t)
+        if acquired_date(t) is not None and t.declared_value is not None:
             return
 
-        self.add_lot(ledger, t)
         self.fail("Deposit of %s %s to %s [TID:%s] has no matching Withdrawal, add the "
                   "Withdrawal, or declare its basis with a Buy Value and an "
                   "acquired:<date> note" % ('{:0,f}'.format(t.quantity.normalize()),
@@ -276,6 +376,8 @@ class TaxCalculatorUS(TaxCalculator):
     def remove_without_disposal(self, ledger, t):
         # e.g. a transfer fee which isn't treated as a disposal, its basis stays with the asset
         removed, _ = self.take_lots(ledger, t)
+        for lot in removed:
+            self.log('Remove', t, lot)
         moved = self._moved_by_record.get(id(t.t_record))
         if moved:
             carry_basis(moved, removed)
