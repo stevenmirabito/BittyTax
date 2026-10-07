@@ -54,8 +54,29 @@ def test_gift_tax_paid_adds_to_basis(tmp_path):
     assert te.cost == Decimal('1300.00')
 
 
-def test_missing_donor_basis_fails_integrity(tmp_path):
-    tax, te = _sale(tmp_path, 3000, 3500, 'birthday')
+def test_no_donor_details_is_fmv_basis_with_one_warning(tmp_path):
+    # Card rebates and rewards: FMV basis, not income, held from receipt
+    use_us_rules()
+    tax = run_tax(write_csv(tmp_path, [
+        GIFT.format(fmv=3000, note='Card Rebate: Netflix'),
+        'Gift-Received,1,ETH,1000,,,,,,,Wallet,2025-03-02T12:00:00Z,CRO Rewards',
+        SALE.format(proceeds=3500),
+    ]), config.TAX_RULES_US_INDIVIDUAL)
+    [te] = [te for events in tax.tax_events.values() for te in events
+            if isinstance(te, TaxEventCapitalGainsUS)]
+    assert (te.cost, te.gain, te.holding_period) == (Decimal('3000.00'), Decimal('500.00'),
+                                                     SHORT_TERM)
+    assert te.acquisition_date.date().isoformat() == '2025-03-01'
+    assert tax.integrity_failures == []
+    assert len(tax.warnings) == 1
+    assert '2 Gift-Received records' in tax.warnings[0] and '$4,000.00' in tax.warnings[0]
+    tax.process_income()
+    assert not [te for events in tax.tax_events.values() for te in events
+                if type(te).__name__ == 'TaxEventIncome']
+
+
+def test_partial_donor_details_fail_integrity(tmp_path):
+    tax, te = _sale(tmp_path, 3000, 3500, 'donor_basis:1000')
     assert te.cost == Decimal('3000.00')
     assert len(tax.integrity_failures) == 1
-    assert 'donor_basis' in tax.integrity_failures[0]
+    assert 'needs both' in tax.integrity_failures[0]

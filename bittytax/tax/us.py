@@ -59,6 +59,8 @@ class TaxCalculatorUS(TaxCalculator):
         self.standing_orders = []
         self.identifications = {}
         self.lot_log = []
+        # Gift-Received rows without donor details, kept at FMV basis (rebates, rewards)
+        self.fmv_gifts = []
         self._phase = None
         self._record_events = True
         self._moved_by_record = {}
@@ -102,6 +104,14 @@ class TaxCalculatorUS(TaxCalculator):
                   if isinstance(te, TaxEventCapitalGainsUS)]
         self.reconciliation = Reconciliation(
             self.us_records.forms_1099da if self.us_records else [], events)
+        if self.fmv_gifts:
+            self.warn("%d Gift-Received records have no donor details, so they're treated as "
+                      "receipts at fair market value basis (%s), not income: right for card "
+                      "rebates and rewards. Add donor_basis:<value> and donor_acquired:<date> "
+                      "to the note of any gift from a person" % (
+                          len(self.fmv_gifts), config.sym() + '{:0,.2f}'.format(
+                              sum((lot.cost for lot in self.fmv_gifts), Decimal(0)))))
+
         for failure in self.reconciliation.failures:
             self.fail(failure)
         for warning in self.reconciliation.warnings:
@@ -205,8 +215,16 @@ class TaxCalculatorUS(TaxCalculator):
         measured from FMV with the holding period starting at the gift.
         """
         tokens = {name: note_token(pattern, t.note) for name, pattern in GIFT_TOKENS.items()}
+        if tokens['donor_basis'] is None and tokens['donor_acquired'] is None:
+            # No donor: a rebate, reward or bonus, received at FMV basis and not income
+            if self._record_events:
+                self.fmv_gifts.append(copy.copy(lot))
+            if config.debug:
+                print("%slots:   gift without donor details, FMV basis %s" % (Fore.YELLOW, lot))
+            return
+
         if tokens['donor_basis'] is None or tokens['donor_acquired'] is None:
-            self.fail("Gift-Received of %s %s [TID:%s] needs donor_basis:<value> and "
+            self.fail("Gift-Received of %s %s [TID:%s] needs both donor_basis:<value> and "
                       "donor_acquired:<date> in its note, using its fair market value as "
                       "basis" % ('{:0,f}'.format(t.quantity.normalize()), t.asset,
                                  t._format_tid()))

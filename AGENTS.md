@@ -69,7 +69,9 @@ Values are in the local currency, which must be `USD` for US rules: set
 | Move coins between **your own** wallets | `Withdrawal` + `Deposit` | One row in each wallet, see [Transfers](#transfers). |
 | Staking, mining, interest, rewards | `Staking` / `Mining` / `Interest` / `Income` | Buy Value = FMV when received (ordinary income). |
 | Airdrop, or new coins from a hard fork | `Airdrop` | Buy Value = FMV when received (income, Rev. Rul. 2019-24). **Don't** use `Gift-Received` for forks. |
-| Coins received as a gift | `Gift-Received` | Needs donor details in the Note, see [Gifts received](#gifts-received). |
+| Coins received as a gift from a person | `Gift-Received` | Needs donor details in the Note, see [Gifts received](#gifts-received). |
+| Card rebates, cashback, spending rewards | `Gift-Received` | **No** donor tokens: received at FMV basis, not income. Buy Value = FMV when received. |
+| Sign-up or promotional bonuses | `Gift-Received` | Recorded like rebates for now. Ask the user before changing these, as whether a bonus is income is their decision. |
 | Coins given as a gift | `Gift-Sent` | Not a sale. Sell Value = FMV (shown on the gift schedule). |
 | Coins given to a spouse | `Gift-Spouse` | Not a sale (IRC 1041). |
 | Donation to a charity | `Charity-Sent` | Not a sale. Sell Value = FMV (deduction schedule). |
@@ -133,7 +135,11 @@ Gifts carry over the **donor's** basis and holding period. Put these tokens in t
 
 Buy Value is the **FMV on the date of the gift**. The tool applies the dual-basis rule when FMV
 was below the donor's basis. Example note: `from Mom donor_basis:1200 donor_acquired:2019-04-02`.
-A `Gift-Received` without the two required tokens fails the integrity check.
+
+A `Gift-Received` with **neither** token is treated as a rebate or reward: basis is its FMV,
+it isn't income, and its holding period starts when it was received. All of these are
+summarised in one warning. Don't add donor tokens to rebates. A row with only **one** of the
+two tokens is an incomplete gift and fails the integrity check.
 
 ## `Standing Orders` sheet
 
@@ -236,7 +242,8 @@ The import must report `failure=0`, and the integrity check must pass. Read each
 | `Insufficient <asset> in <wallet>` | Missing acquisition or transfer in, or wrong wallet name | Find the missing rows, check the Wallet spelling |
 | `<wallet>:<asset> audit balance X, lots held Y` | Same as above | Same as above |
 | `held at the cutover differs between the universal and traced methods` | Unlinked transfers before 2025 | Link or complete pre-2025 transfers |
-| `Gift-Received ... needs donor_basis` | Missing gift tokens | Add the donor tokens to the Note |
+| `Gift-Received ... needs both donor_basis ... and donor_acquired` | Incomplete gift tokens | Add the missing token to the Note |
+| `N Gift-Received records have no donor details` (warning) | Rebates and rewards, expected | Check none of them is a real gift from a person |
 | `Identification ... was recorded after the transaction` | Backdated or late identification | Leave the sale to FIFO or the standing order. **Don't** change Recorded At |
 | `1099-DA sale ... isn't in your records` | Missing or misdated sale, or wrong Wallet/Asset on the sheet | Find the sale; check the transcription |
 | Reconciliation `Review (O)` | Proceeds differ unexplained | Check the sale value and fees in the transaction row |
