@@ -1,0 +1,46 @@
+{% set transition = tax_report[tax_year]['Transition'] %}
+<h2>Per-Wallet Basis at {{ transition.cutover|datefilter }}</h2>
+<p>From {{ transition.cutover|datefilter }} basis is identified wallet by wallet (Treas. Reg.
+&sect;1.1012-1(j)). No Rev. Proc. 2024-28 allocation was made, so the lots held in each
+wallet are found by tracing the earlier transactions wallet by wallet. Gains before this date
+are unchanged and were calculated with the universal method.</p>
+<table repeat="1" width="100%">
+    <tr>
+        <th align="left">Wallet</th>
+        <th align="left">Asset</th>
+        <th align="right">Quantity</th>
+        <th align="left">&nbsp;&nbsp;Acquired</th>
+        <th align="right">Basis</th>
+    </tr>
+    {% for lot in transition.lots %}
+        <tr>
+            <td>{{ lot.wallet }}</td>
+            <td>{{ lot.asset }}</td>
+            <td align="right">{{ lot.quantity|quantityfilter }}</td>
+            <td>&nbsp;&nbsp;{{ lot.acquired|datefilter }}</td>
+            <td align="right">{{ (lot.cost + lot.fees)|valuefilter }}</td>
+        </tr>
+    {% endfor %}
+</table>
+<h3>Reconciliation with the Universal Method</h3>
+<p>Units must match. Basis differs where the universal method sold units from a different
+wallet than the one they actually left.</p>
+<table repeat="1" width="100%">
+    <tr>
+        <th align="left">Asset</th>
+        <th align="right">Units</th>
+        <th align="right">Universal Basis</th>
+        <th align="right">Traced Basis</th>
+        <th align="right">Difference</th>
+    </tr>
+    {% for asset in transition.assets|sort %}
+        {% set totals = transition.assets[asset] %}
+        <tr>
+            <td>{{ asset }}</td>
+            <td align="right">{{ totals.traced_quantity|quantityfilter }}</td>
+            <td align="right">{{ totals.universal_cost|valuefilter }}</td>
+            <td align="right">{{ totals.traced_cost|valuefilter }}</td>
+            <td align="right"{% if totals.basis_shift < 0 %} class="red_font"{% endif %}>{{ totals.basis_shift|valuefilter }}</td>
+        </tr>
+    {% endfor %}
+</table>

@@ -1,0 +1,77 @@
+<h2>Current Holdings by Wallet</h2>
+{% set wallets = holdings_report.get('wallets', {}) %}
+{% for wallet in wallets|sort %}
+    <p><b>{{ wallet }}</b></p>
+    <table repeat="1" width="100%">
+        <tr>
+            <th align="left" width="25%">Lot</th>
+            <th align="left">Acquired</th>
+            <th align="left">Term</th>
+            <th align="right">Quantity</th>
+            <th align="right">Cost Basis</th>
+            <th align="right">Value</th>
+        </tr>
+        {% for asset in wallets[wallet]|sort %}
+            {% set holding = wallets[wallet][asset] %}
+            {% for lot in holding.lots %}
+                <tr>
+                    <td>{{ asset }}</td>
+                    <td>{{ lot.acquired|datefilter }}</td>
+                    <td>{{ lot.holding_period }}</td>
+                    <td align="right">{{ lot.quantity|quantityfilter }}</td>
+                    <td align="right">{{ lot.cost|valuefilter }}</td>
+                    <td></td>
+                </tr>
+            {% endfor %}
+            <tr class="subtotal_row">
+                <td>{{ asset }} Total</td>
+                <td></td>
+                <td></td>
+                <td align="right">{{ holding.quantity|quantityfilter }}</td>
+                <td align="right">{{ holding.cost|valuefilter }}</td>
+                {% if holding.value is not none %}
+                    <td align="right">{{ holding.value|valuefilter }}</td>
+                {% else %}
+                    <td align="right"><i>Not available</i></td>
+                {% endif %}
+            </tr>
+        {% endfor %}
+    </table>
+    <br>
+{% endfor %}
+<h2>Current Holdings by Asset</h2>
+<table repeat="1" width="100%">
+    <tr>
+        <th align="left">Asset</th>
+        <th align="right">Quantity</th>
+        <th align="right">Cost Basis</th>
+        <th align="right">Value</th>
+        <th align="right">Unrealized Gain</th>
+    </tr>
+    {% for h in holdings_report['holdings']|sort %}
+        {% set holding = holdings_report['holdings'][h] %}
+        <tr>
+            {% if holding['name'] %}
+                <td>{{ holding['asset'] }} ({{ holding['name']|nowrapfilter }})</td>
+            {% else %}
+                <td>{{ holding['asset'] }}</td>
+            {% endif %}
+            <td align="right">{{ holding['quantity']|quantityfilter }}</td>
+            <td align="right">{{ holding['cost']|valuefilter }}</td>
+            {% if holding['value'] is not none %}
+                <td align="right">{{ holding['value']|valuefilter }}</td>
+                <td align="right"{% if holding['gain'] < 0 %} class="red_font"{% endif %}>{{ holding['gain']|valuefilter }}</td>
+            {% else %}
+                <td align="right"><i>Not available</i></td>
+                <td></td>
+            {% endif %}
+        </tr>
+    {% endfor %}
+    <tr class="total_row">
+        <td>Total</td>
+        <td></td>
+        <td align="right">{{ holdings_report['totals']['cost']|valuefilter }}</td>
+        <td align="right">{{ holdings_report['totals']['value']|valuefilter }}</td>
+        <td align="right"{% if holdings_report['totals']['gain'] < 0 %} class="red_font"{% endif %}>{{ holdings_report['totals']['gain']|valuefilter }}</td>
+    </tr>
+</table>

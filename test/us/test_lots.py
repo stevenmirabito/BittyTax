@@ -79,3 +79,11 @@ def test_sell_more_than_held_is_an_integrity_failure(tmp_path):
     rows = gains_rows(tax)
     assert sorted([r[4:6] + r[9:] for r in rows], key=str) == sorted(
         [['1', '10000.00', '2023-01-01'], ['0.5', '0.00', None]], key=str)
+
+
+def test_lot_ids_are_stable_and_unique():
+    ledger = WalletLedger(per_wallet=True)
+    when = datetime(2024, 4, 1, 11, tzinfo=config.TZ_UTC)
+    assert ledger.new_lot_id('BTC', 'Kraken', when) == 'BTC:Kraken:2024-04-01T11:00:00Z'
+    assert ledger.new_lot_id('BTC', 'Kraken', when) == 'BTC:Kraken:2024-04-01T11:00:00Z#2'
+    assert ledger.new_lot_id('ETH', 'Kraken', when) == 'ETH:Kraken:2024-04-01T11:00:00Z'

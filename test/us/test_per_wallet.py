@@ -157,3 +157,15 @@ def test_audit_detects_wallet_mismatch(tmp_path):
     ])
     assert any('Insufficient BTC in B' in f for f in tax.integrity_failures)
     assert mismatches == ['B:BTC audit balance -0.5, lots held 0']
+
+
+def test_fragments_of_a_lot_are_reported_once(tmp_path):
+    tax, _ = _run(tmp_path, [
+        'Trade,1,BTC,10000,10000,USD,,,,,Exchange,2023-01-01T12:00:00Z,',
+        'Withdrawal,,,,0.4,BTC,,,,,Exchange,2025-02-01T12:00:00Z,',
+        'Deposit,0.4,BTC,,,,,,,,Ledger,2025-02-01T12:30:00Z,',
+        'Withdrawal,,,,0.4,BTC,,,,,Ledger,2025-03-01T12:00:00Z,',
+        'Deposit,0.4,BTC,,,,,,,,Exchange,2025-03-01T12:30:00Z,',
+        'Trade,50000,USD,,1,BTC,50000,,,,Exchange,2025-04-01T12:00:00Z,',
+    ])
+    assert _gains(tax) == [('Exchange', '1', '10000.00', '0.00', '50000.00', '2023-01-01')]

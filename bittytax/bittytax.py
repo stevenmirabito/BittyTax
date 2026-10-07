@@ -16,12 +16,13 @@ from .version import __version__
 from .config import config
 from .import_records import ImportRecords
 from .export_records import ExportRecords
+from .export_us import ExportForm8949
 from .transactions import TransactionHistory
 from .audit import AuditRecords
 from .price.valueasset import ValueAsset
 from .price.exceptions import DataSourceError
 from .tax import TaxCalculatorUK, TaxCalculatorUS, CalculateCapitalGains as CCG
-from .report import ReportLog, ReportPdf
+from .report import ReportLog, ReportLogUS, ReportPdf
 from .exceptions import ImportFailureError
 
 if sys.stdout.encoding != 'UTF-8':
@@ -84,9 +85,17 @@ def main():
     parser.add_argument('--export',
                         action='store_true',
                         help="export your transaction records populated with price data")
+    parser.add_argument('--export-8949',
+                        dest='export_8949',
+                        action='store_true',
+                        help="US tax rules only, export capital gains as Form 8949 rows (CSV)")
 
     args = parser.parse_args()
     config.debug = args.debug
+
+    if args.export_8949 and args.tax_rules != config.TAX_RULES_US_INDIVIDUAL:
+        parser.error("argument --export-8949: requires --taxrules %s" %
+                     config.TAX_RULES_US_INDIVIDUAL)
 
     if args.taxyear and not is_supported_year(args.taxyear, args.tax_rules):
         parser.error("argument -ty/--taxyear: tax year %d is not supported, "
@@ -135,8 +144,12 @@ def main():
         parser.exit("%sERROR%s %s" % (
             Back.RED+Fore.BLACK, Back.RESET+Fore.RED, e))
 
+    if args.export_8949:
+        ExportForm8949(tax.tax_report).write_csv()
+
     if args.nopdf:
-        ReportLog(audit,
+        report_log = ReportLogUS if args.tax_rules == config.TAX_RULES_US_INDIVIDUAL else ReportLog
+        report_log(audit,
                   tax.tax_report,
                   value_asset.price_report,
                   tax.holdings_report,

@@ -538,6 +538,135 @@ class ReportLog(object):
             return Fore.YELLOW + '*' + Fore.WHITE
         return '{}%'.format(rate)
 
+class ReportLogUS(ReportLog):
+    TERMS = ('Short-term', 'Long-term')
+
+    def capital_gains(self, tax_year, tax_rules, summary):
+        cgains = self.tax_report[tax_year]['CapitalGains']
+
+        if 'Transition' in self.tax_report[tax_year] and not summary:
+            self.transition(self.tax_report[tax_year]['Transition'])
+
+        print("%sCapital Gains and Losses (Form 8949)" % Fore.CYAN)
+        header = "%-28s %-10s %-10s %-24s %13s %13s %13s" % (
+            'Description', 'Acquired', 'Sold', 'Wallet', 'Proceeds', 'Cost Basis', 'Gain')
+
+        for part, term in zip(('I', 'II'), self.TERMS):
+            print("\n%sPart %s - %s" % (Fore.CYAN, part, term))
+            boxes = cgains.terms[term]['boxes']
+            for box in sorted(boxes):
+                print("\n%sBox %s - %s" % (Fore.CYAN, box, cgains.BOX_DESCRIPTIONS[box]))
+                print("%s%s" % (Fore.YELLOW, header))
+                for wallet in sorted(boxes[box]['wallets']):
+                    for asset in sorted(boxes[box]['wallets'][wallet]):
+                        for te in boxes[box]['wallets'][wallet][asset]:
+                            print("%s%-28s %-10s %-10s %-24s %13s %13s %s%13s" % (
+                                Fore.WHITE,
+                                te.format_asset(),
+                                self.format_date(te.acquisition_date)
+                                if te.acquisition_date else 'Unknown',
+                                self.format_date(te.date),
+                                wallet[:24],
+                                self.format_value(te.proceeds),
+                                self.format_value(te.basis),
+                                Fore.RED if te.gain < 0 else Fore.WHITE,
+                                self.format_value(te.gain)))
+                self._totals_row('Box %s Total' % box, boxes[box]['totals'], header)
+
+        print("\n%sSummary\n" % Fore.CYAN)
+        print("%s%-20s %10s %13s %13s %13s" % (Fore.YELLOW, '', 'Disposals', 'Proceeds',
+                                                'Cost Basis', 'Gain'))
+        for term in self.TERMS:
+            totals = cgains.terms[term]['totals']
+            print("%s%-20s %10d %13s %13s %s%13s" % (
+                Fore.WHITE, term, totals['disposals'],
+                self.format_value(totals['proceeds']),
+                self.format_value(totals['basis']),
+                Fore.RED if totals['gain'] < 0 else Fore.WHITE,
+                self.format_value(totals['gain'])))
+        print("%s%-20s %10d %13s %13s %s%13s" % (
+            Fore.YELLOW+Style.BRIGHT, 'Total', cgains.summary['disposals'],
+            self.format_value(cgains.totals['proceeds']),
+            self.format_value(cgains.totals['cost'] + cgains.totals['fees']),
+            Fore.RED if cgains.totals['gain'] < 0 else Fore.YELLOW,
+            self.format_value(cgains.totals['gain'])) + Style.NORMAL)
+
+        if not summary:
+            self.non_sales(cgains)
+
+    def _totals_row(self, label, totals, header):
+        print("%s%s" % (Fore.YELLOW, '_' * len(header)))
+        print("%s%-75s %13s %13s %s%13s" % (
+            Fore.YELLOW, label,
+            self.format_value(totals['proceeds']),
+            self.format_value(totals['basis']),
+            Fore.RED if totals['gain'] < 0 else Fore.YELLOW,
+            self.format_value(totals['gain'])))
+
+    def non_sales(self, cgains):
+        if not cgains.non_sales:
+            return
+
+        print("\n%sGifts, Donations and Losses (no gain or loss)" % Fore.CYAN)
+        print("%s%-14s %-28s %-10s %-24s %-10s %-10s %13s %13s" % (
+            Fore.YELLOW, 'Type', 'Description', 'Date', 'Wallet', 'Acquired', 'Term',
+            'Basis', 'FMV'))
+        for non_sale_type in sorted(cgains.non_sales):
+            for te in cgains.non_sales[non_sale_type]:
+                print("%s%-14s %-28s %-10s %-24s %-10s %-10s %13s %13s" % (
+                    Fore.WHITE, te.type,
+                    '{:0,.8f} {}'.format(te.quantity, te.asset),
+                    self.format_date(te.date),
+                    te.wallet[:24],
+                    self.format_date(te.acquisition_date) if te.acquisition_date else 'Unknown',
+                    te.holding_period,
+                    self.format_value(te.basis),
+                    self.format_value(te.fair_market_value)))
+
+    def transition(self, transition):
+        print("%sPer-Wallet Basis at %s (traced, no Rev. Proc. 2024-28 allocation)\n" % (
+            Fore.CYAN, self.format_date(transition.cutover)))
+        print("%s%-24s %-8s %25s %-10s %13s" % (Fore.YELLOW, 'Wallet', 'Asset', 'Quantity',
+                                                 ' Acquired', 'Basis'))
+        for lot in transition.lots:
+            print("%s%-24s %-8s %25s  %-10s %13s" % (
+                Fore.WHITE, lot.wallet[:24], lot.asset, self.format_quantity(lot.quantity),
+                self.format_date(lot.acquired) if lot.acquired else 'Unknown',
+                self.format_value(lot.cost + lot.fees)))
+
+        print("\n%s%-8s %25s %16s %16s %16s" % (Fore.YELLOW, 'Asset', 'Units',
+                                                 'Universal Basis', 'Traced Basis',
+                                                 'Difference'))
+        for asset in sorted(transition.assets):
+            totals = transition.assets[asset]
+            print("%s%-8s %25s %16s %16s %s%16s" % (
+                Fore.WHITE, asset, self.format_quantity(totals['traced_quantity']),
+                self.format_value(totals['universal_cost']),
+                self.format_value(totals['traced_cost']),
+                Fore.RED if totals['basis_shift'] < 0 else Fore.WHITE,
+                self.format_value(totals['basis_shift'])))
+        print('')
+
+    def holdings(self):
+        print("%sCurrent Holdings by Wallet" % Fore.CYAN)
+        wallets = self.holdings_report.get('wallets', {})
+        for wallet in sorted(wallets):
+            print("\n%s%-24s %-8s %-10s %-10s %25s %16s" % (
+                Fore.YELLOW, wallet[:24], 'Asset', 'Acquired', 'Term', 'Quantity',
+                'Cost Basis'))
+            for asset in sorted(wallets[wallet]):
+                holding = wallets[wallet][asset]
+                for lot in holding['lots']:
+                    print("%s%-24s %-8s %-10s %-10s %25s %16s" % (
+                        Fore.WHITE, '', asset,
+                        self.format_date(lot['acquired']) if lot['acquired'] else 'Unknown',
+                        lot['holding_period'],
+                        self.format_quantity(lot['quantity']),
+                        self.format_value(lot['cost'])))
+        print('')
+        super(ReportLogUS, self).holdings()
+
+
 class ProgressSpinner:
     def __init__(self):
         self.spinner = itertools.cycle(['-', '\\', '|', '/'])

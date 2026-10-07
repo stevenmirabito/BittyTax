@@ -13,7 +13,7 @@ import dateutil.parser
 
 from ..config import config
 from ..transactions import Buy, Sell
-from .base import TaxCalculator, TaxEvent, TaxEventCapitalGains
+from .base import TaxCalculator, TaxEvent, TaxEventCapitalGains, CalculateCapitalGains
 from .lots import Lot, WalletLedger, FifoSelector, Shortfall
 from .transfers import link_transfers, acquired_date
 
@@ -141,7 +141,7 @@ class TaxCalculatorUS(TaxCalculator):
         return ledger
 
     def add_lot(self, ledger, t):
-        lot = Lot.from_buy(t, ledger.next_seq())
+        lot = Lot.from_buy(t, ledger)
         ledger.add(lot)
         if config.debug:
             print("%slots:   add %s" % (Fore.YELLOW, lot))
@@ -161,6 +161,7 @@ class TaxCalculatorUS(TaxCalculator):
 
     def dispose(self, ledger, t):
         lots, unmatched = self.take_lots(ledger, t)
+        lots = merge_fragments(lots, t)
 
         if unmatched:
             # Units which can't be traced to an acquisition have a zero basis
@@ -178,6 +179,7 @@ class TaxCalculatorUS(TaxCalculator):
 
     def remove_non_sale(self, ledger, t):
         lots, unmatched = self.take_lots(ledger, t)
+        lots = merge_fragments(lots, t)
         if unmatched:
             lots.append(Lot(t.asset, t.wallet, unmatched, Decimal(0), Decimal(0), None,
                             None, None))
@@ -268,6 +270,76 @@ class TaxCalculatorUS(TaxCalculator):
 
     def process_disposal(self, t, cost, fees):
         raise NotImplementedError("US disposals are matched to lots")
+
+    def calculate_capital_gains(self, tax_year):
+        cgains = CalculateCapitalGainsUS(tax_year, self.tax_rules)
+
+        for te in sorted(self.tax_events.get(tax_year, [])):
+            if isinstance(te, TaxEventCapitalGainsUS):
+                cgains.tax_summary(te)
+            elif isinstance(te, TaxEventNonSale):
+                cgains.non_sale(te)
+
+        self.tax_report[tax_year] = {'CapitalGains': cgains}
+        if self.transition and self.transition.cutover.year == tax_year:
+            self.tax_report[tax_year]['Transition'] = self.transition
+
+    def calculate_holdings(self, value_asset):
+        """Open lots by wallet, with the same per asset roll-up as the UK report."""
+        super(TaxCalculatorUS, self).calculate_holdings(value_asset)
+
+        prices = {}
+        for h in self.holdings_report['holdings'].values():
+            if h['value'] is not None and h['quantity']:
+                prices[h['asset']] = h['value'] / h['quantity']
+
+        today = datetime.now(config.TZ_LOCAL)
+        wallets = {}
+        for lot in sorted(self.ledger.open_lots(),
+                          key=lambda lot: (lot.wallet, lot.asset, lot.acquired or today)):
+            holding = wallets.setdefault(lot.wallet, {}).setdefault(lot.asset, {
+                'quantity': Decimal(0), 'cost': Decimal(0), 'value': None, 'gain': None,
+                'lots': []})
+            holding['quantity'] += lot.quantity
+            holding['cost'] += lot.cost + lot.fees
+            holding['lots'].append({
+                'lot_id': lot.lot_id,
+                'quantity': lot.quantity,
+                'cost': (lot.cost + lot.fees).quantize(PRECISION),
+                'acquired': lot.acquired,
+                'holding_period': holding_period(lot.acquired, today),
+            })
+
+        for assets in wallets.values():
+            for asset, holding in assets.items():
+                holding['cost'] = holding['cost'].quantize(PRECISION)
+                if asset in prices:
+                    holding['value'] = (prices[asset] * holding['quantity']).quantize(PRECISION)
+                    holding['gain'] = holding['value'] - holding['cost']
+
+        self.holdings_report['wallets'] = wallets
+
+
+def merge_fragments(lots, s):
+    """Combine fragments of the same lot taken together, so a disposal reports each lot once.
+
+    Fragments are only combined if they're reported in the same Form 8949 box, a fragment
+    which arrived by transfer isn't covered for broker basis reporting.
+    """
+    def box(lot):
+        return form_8949_box(lot, s, holding_period(lot.acquired, s.timestamp))
+
+    merged = []
+    for lot in lots:
+        same = [m for m in merged if m.lot_id == lot.lot_id and lot.lot_id is not None
+                and box(m) == box(lot)]
+        if same:
+            same[0].quantity += lot.quantity
+            same[0].cost += lot.cost
+            same[0].fees += lot.fees
+        else:
+            merged.append(copy.copy(lot))
+    return merged
 
 
 def carry_basis(lots, removed):
@@ -374,9 +446,58 @@ class TaxEventCapitalGainsUS(TaxEventCapitalGains):
         self.acquisition_date = lot.acquired
         self.holding_period = holding_period(lot.acquired, s.timestamp)
         self.form_8949_box = form_8949_box(lot, s, self.holding_period)
+        # Form 8949 column (e): cost including acquisition and disposal fees
+        self.basis = self.cost + self.fees
 
-    def basis(self):
-        return self.cost + self.fees
+
+class CalculateCapitalGainsUS(CalculateCapitalGains):
+    """Capital gains grouped as Form 8949 reports them: by term, then box, then wallet."""
+
+    BOX_DESCRIPTIONS = {
+        'C': 'Short-term transactions not reported to you on Form 1099-B',
+        'F': 'Long-term transactions not reported to you on Form 1099-B',
+        'G': 'Short-term digital asset transactions reported on Form 1099-DA '
+             'with basis reported to the IRS',
+        'H': 'Short-term digital asset transactions reported on Form 1099-DA '
+             'with basis not reported to the IRS',
+        'I': 'Short-term digital asset transactions not reported on Form 1099-DA',
+        'J': 'Long-term digital asset transactions reported on Form 1099-DA '
+             'with basis reported to the IRS',
+        'K': 'Long-term digital asset transactions reported on Form 1099-DA '
+             'with basis not reported to the IRS',
+        'L': 'Long-term digital asset transactions not reported on Form 1099-DA',
+    }
+
+    def __init__(self, tax_year, tax_rules):
+        super(CalculateCapitalGainsUS, self).__init__(tax_year, tax_rules)
+        self.terms = {term: {'boxes': {}, 'totals': self._totals()}
+                      for term in (SHORT_TERM, LONG_TERM)}
+        self.non_sales = {}
+
+    @staticmethod
+    def _totals():
+        return {'disposals': 0, 'proceeds': Decimal(0), 'basis': Decimal(0),
+                'gain': Decimal(0)}
+
+    @staticmethod
+    def _add(totals, te):
+        totals['disposals'] += 1
+        totals['proceeds'] += te.proceeds
+        totals['basis'] += te.basis
+        totals['gain'] += te.gain
+
+    def tax_summary(self, te):
+        super(CalculateCapitalGainsUS, self).tax_summary(te)
+
+        term = self.terms[te.holding_period]
+        box = term['boxes'].setdefault(te.form_8949_box, {'wallets': {},
+                                                          'totals': self._totals()})
+        box['wallets'].setdefault(te.wallet, {}).setdefault(te.asset, []).append(te)
+        self._add(box['totals'], te)
+        self._add(term['totals'], te)
+
+    def non_sale(self, te):
+        self.non_sales.setdefault(te.type, []).append(te)
 
 
 class TaxEventNonSale(TaxEvent):

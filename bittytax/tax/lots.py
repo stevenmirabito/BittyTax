@@ -5,6 +5,8 @@
 import copy
 from decimal import Decimal
 
+from dateutil.tz import UTC
+
 from ..holdings import Holdings
 
 # Bucket used for every lot when wallets are pooled together (universal method)
@@ -32,19 +34,13 @@ class Lot(object):
         self.history = []
 
     @classmethod
-    def from_buy(cls, buy, seq):
+    def from_buy(cls, buy, ledger):
         return cls(buy.asset, buy.wallet, buy.quantity,
                    buy.cost if buy.cost is not None else Decimal(0),
                    buy.fee_value or Decimal(0),
                    buy.timestamp,
-                   cls.make_lot_id(buy),
-                   seq)
-
-    @staticmethod
-    def make_lot_id(buy):
-        return '%s:%s:%s:%s.%s' % (buy.asset, buy.wallet,
-                                   buy.timestamp.strftime('%Y-%m-%dT%H:%M:%S'),
-                                   buy.tid[0], buy.tid[1])
+                   ledger.new_lot_id(buy.asset, buy.wallet, buy.timestamp),
+                   ledger.next_seq())
 
     def split(self, quantity):
         """Split off a fragment of `quantity` units, this lot keeps the remainder."""
@@ -92,12 +88,22 @@ class WalletLedger(object):
         self.per_wallet = per_wallet
         self.lots = {}
         self.seq = 0
+        self.lot_ids = {}
 
     def _bucket(self, wallet, asset):
         key = (wallet if self.per_wallet else UNIVERSAL, asset)
         if key not in self.lots:
             self.lots[key] = []
         return self.lots[key]
+
+    def new_lot_id(self, asset, wallet, timestamp):
+        """Stable lot ID from what was acquired, where and when (UTC), so it survives other
+        records being added. Acquisitions in the same second are numbered in record order."""
+        lot_id = '%s:%s:%s' % (asset, wallet,
+                               timestamp.astimezone(UTC).strftime('%Y-%m-%dT%H:%M:%SZ'))
+        count = self.lot_ids.get(lot_id, 0) + 1
+        self.lot_ids[lot_id] = count
+        return lot_id if count == 1 else '%s#%d' % (lot_id, count)
 
     def next_seq(self):
         self.seq += 1

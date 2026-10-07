@@ -36,12 +36,16 @@ def test_uk_report_uses_shared_templates():
     html = _render(os.path.join(FIXTURES, 'golden', 'multi_wallet_gbp.csv'),
                    config.TAX_RULES_UK_INDIVIDUAL, [2022, 2023])
     assert 'Tax Estimate' in html
-    assert 'Proceeds from Broker' not in html
+    assert 'Form 8949' not in html
 
 
 def test_us_report_uses_us_templates():
     use_us_rules()
     html = _render(os.path.join(FIXTURES, 'multi_wallet.csv'),
-                   config.TAX_RULES_US_INDIVIDUAL, [2025])
-    assert 'Proceeds from Broker' in html
+                   config.TAX_RULES_US_INDIVIDUAL, [2021, 2022, 2023, 2025, 2026])
     assert 'Tax Estimate' not in html
+    assert 'Part II - Long-term' in html
+    assert 'Box L - Long-term digital asset transactions not reported on Form 1099-DA' in html
+    assert 'Box F - Long-term transactions not reported to you on Form 1099-B' in html
+    assert 'Per-Wallet Basis at' in html
+    assert 'Current Holdings by Wallet' in html
