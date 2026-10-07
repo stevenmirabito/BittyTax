@@ -73,6 +73,7 @@ class Config(object):
         'us_wallet_cutover': '2025-01-01',
         'transfer_match_window_hours': 24,
         'transfer_match_tolerance': 0.005,
+        'wallets': {},
     }
 
     def __init__(self):

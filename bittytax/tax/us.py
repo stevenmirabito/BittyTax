@@ -4,7 +4,7 @@
 
 import sys
 import copy
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from colorama import Fore, Back
@@ -35,6 +35,12 @@ class TaxCalculatorUS(TaxCalculator):
 
     INCOME_TYPES = (Buy.TYPE_MINING, Buy.TYPE_STAKING, Buy.TYPE_DIVIDEND, Buy.TYPE_INTEREST,
                     Buy.TYPE_INCOME, Buy.TYPE_AIRDROP)
+
+    # Units leave the taxpayer without a gain or loss being realized: a gift isn't a
+    #  realization event for the donor, transfers between spouses fall under IRC 1041, a
+    #  donation isn't a sale, and a casualty/theft loss isn't a capital loss
+    NON_SALE_TYPES = (Sell.TYPE_GIFT_SENT, Sell.TYPE_GIFT_SPOUSE, Sell.TYPE_CHARITY_SENT,
+                      Sell.TYPE_LOST)
 
     def __init__(self, transactions, tax_rules):
         super(TaxCalculatorUS, self).__init__(transactions, tax_rules)
@@ -113,12 +119,17 @@ class TaxCalculatorUS(TaxCalculator):
                 print("%slots: %s" % (Fore.GREEN, t))
 
             if isinstance(t, Buy):
+                if t.t_type == Sell.TYPE_LOST:
+                    # The UK "negligible value" buy-back has no US equivalent
+                    continue
                 if t.acquisition:
                     self.add_lot(ledger, t)
                 elif t.t_type == Buy.TYPE_DEPOSIT and ledger.per_wallet:
                     self.deposit(ledger, t)
             elif isinstance(t, Sell):
-                if t.disposal:
+                if t.t_type in self.NON_SALE_TYPES:
+                    self.remove_non_sale(ledger, t)
+                elif t.disposal:
                     self.dispose(ledger, t)
                 elif t.t_type == Sell.TYPE_WITHDRAWAL:
                     if ledger.per_wallet:
@@ -161,6 +172,26 @@ class TaxCalculatorUS(TaxCalculator):
 
         for lot, s in self.split_sell(t, lots):
             tax_event = TaxEventCapitalGainsUS(self.selector.name, lot, s)
+            self.tax_events[self.which_tax_year(tax_event.date)].append(tax_event)
+            if config.debug:
+                print("%slots:   %s <- %s" % (Fore.CYAN, tax_event, lot))
+
+    def remove_non_sale(self, ledger, t):
+        lots, unmatched = self.take_lots(ledger, t)
+        if unmatched:
+            lots.append(Lot(t.asset, t.wallet, unmatched, Decimal(0), Decimal(0), None,
+                            None, None))
+
+        if not self._record_events:
+            return
+
+        if t.t_type == Sell.TYPE_LOST:
+            self.warn("Lost %s %s [TID:%s] is not a capital loss, and a casualty or theft "
+                      "loss is generally not deductible for individuals" % (
+                          '{:0,f}'.format(t.quantity.normalize()), t.asset, t._format_tid()))
+
+        for lot, s in self.split_sell(t, lots):
+            tax_event = TaxEventNonSale(lot, s)
             self.tax_events[self.which_tax_year(tax_event.date)].append(tax_event)
             if config.debug:
                 print("%slots:   %s <- %s" % (Fore.CYAN, tax_event, lot))
@@ -280,6 +311,54 @@ class Transition(object):
                         '{:0,f}'.format(totals['traced_quantity'].normalize())))
 
 
+SHORT_TERM = 'Short-term'
+LONG_TERM = 'Long-term'
+
+
+def holding_period(acquired, disposed):
+    """Long-term if held more than one year (IRC 1222), the holding period starting the day
+    after acquisition. Units with no known acquisition date are treated as short-term."""
+    if acquired is None:
+        return SHORT_TERM
+
+    acquired = acquired.astimezone(config.TZ_LOCAL).date()
+    disposed = disposed.astimezone(config.TZ_LOCAL).date()
+    try:
+        anniversary = acquired.replace(year=acquired.year + 1)
+    except ValueError:
+        # Acquired on Feb 29th
+        anniversary = date(acquired.year + 1, 2, 28)
+    return LONG_TERM if disposed > anniversary else SHORT_TERM
+
+
+def wallet_info(wallet):
+    return (config.wallets or {}).get(wallet) or {}
+
+
+def form_8949_box(lot, s, term):
+    """Form 8949 box: A-F before 2025, then the digital asset boxes G-L.
+
+    G/J: reported on a 1099-DA with basis reported to the IRS (covered units)
+    H/K: reported on a 1099-DA without basis (noncovered units)
+    I/L: not reported on a 1099-DA
+    """
+    short = term == SHORT_TERM
+    if s.timestamp.astimezone(config.TZ_LOCAL).year < 2025:
+        # Digital assets were rarely reported on a 1099-B
+        return 'C' if short else 'F'
+
+    info = wallet_info(s.wallet)
+    if not info.get('issues_1099da'):
+        return 'I' if short else 'L'
+
+    # Basis reporting is mandatory for units acquired in the account from 2026
+    covered = (lot.acquired is not None and not lot.history
+               and lot.acquired.astimezone(config.TZ_LOCAL).year >= 2026)
+    if covered:
+        return 'G' if short else 'J'
+    return 'H' if short else 'K'
+
+
 class TaxEventCapitalGainsUS(TaxEventCapitalGains):
     # pylint: disable=super-init-not-called
     def __init__(self, disposal_type, lot, s):
@@ -293,3 +372,30 @@ class TaxEventCapitalGainsUS(TaxEventCapitalGains):
         self.proceeds = s.proceeds.quantize(PRECISION)
         self.gain = self.proceeds - self.cost - self.fees
         self.acquisition_date = lot.acquired
+        self.holding_period = holding_period(lot.acquired, s.timestamp)
+        self.form_8949_box = form_8949_box(lot, s, self.holding_period)
+
+    def basis(self):
+        return self.cost + self.fees
+
+
+class TaxEventNonSale(TaxEvent):
+    """Units given away, donated or lost: no gain or loss, but the basis is reported."""
+
+    def __init__(self, lot, s):
+        super(TaxEventNonSale, self).__init__(s.timestamp, s.asset)
+        self.type = s.t_type
+        self.quantity = s.quantity
+        self.wallet = s.wallet
+        self.note = s.note
+        self.lot_id = lot.lot_id
+        self.basis = (lot.cost + lot.fees).quantize(PRECISION)
+        self.fair_market_value = (s.proceeds or Decimal(0)).quantize(PRECISION)
+        self.acquisition_date = lot.acquired
+        self.holding_period = holding_period(lot.acquired, s.timestamp)
+
+    def deductible_amount(self):
+        """Charitable deduction before AGI limits: FMV if long-term, else the lower of basis."""
+        if self.holding_period == LONG_TERM:
+            return self.fair_market_value
+        return min(self.fair_market_value, self.basis)
