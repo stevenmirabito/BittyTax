@@ -8,6 +8,7 @@ from colorama import Fore, Back, Style
 from tqdm import tqdm
 
 from .config import config
+from .tax.lots import DUST
 
 class AuditRecords(object):
     def __init__(self, transaction_records):
@@ -151,7 +152,7 @@ class AuditRecords(object):
         for wallet, asset in sorted(keys):
             audit = self.wallets.get(wallet, {}).get(asset, Decimal(0))
             held = balances.get((wallet, asset), Decimal(0))
-            if audit != held:
+            if abs(audit - held) > DUST:
                 mismatches.append("%s:%s audit balance %s, lots held %s" % (
                     wallet, asset, '{:0,f}'.format(audit.normalize()),
                     '{:0,f}'.format(held.normalize())))

@@ -12,6 +12,9 @@ from ..holdings import Holdings
 # Bucket used for every lot when wallets are pooled together (universal method)
 UNIVERSAL = '<universal>'
 
+# Shortfalls up to this many units are floating point residue in the source records
+DUST = Decimal('1e-12')
+
 
 class Lot(object):
     """Units of an asset acquired together, which share a cost basis and holding period.
@@ -149,7 +152,7 @@ class WalletLedger(object):
                 taken.append(lot)
                 remaining -= lot.quantity
 
-        if remaining > 0:
+        if remaining > DUST:
             shortfall = Shortfall(wallet, asset, quantity, quantity - remaining)
             shortfall.taken = taken
             raise shortfall

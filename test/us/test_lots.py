@@ -87,3 +87,12 @@ def test_lot_ids_are_stable_and_unique():
     assert ledger.new_lot_id('BTC', 'Kraken', when) == 'BTC:Kraken:2024-04-01T11:00:00Z'
     assert ledger.new_lot_id('BTC', 'Kraken', when) == 'BTC:Kraken:2024-04-01T11:00:00Z#2'
     assert ledger.new_lot_id('ETH', 'Kraken', when) == 'ETH:Kraken:2024-04-01T11:00:00Z'
+
+
+def test_dust_shortfall_is_ignored():
+    ledger = WalletLedger(per_wallet=True)
+    _lot(ledger, 'A', '1', '100', 1)
+    taken = ledger.remove('A', 'BTC', Decimal('1.00000000000006'), FifoSelector())
+    assert sum(lot.quantity for lot in taken) == 1
+    with pytest.raises(Shortfall):
+        ledger.remove('A', 'BTC', Decimal('0.000001'), FifoSelector())

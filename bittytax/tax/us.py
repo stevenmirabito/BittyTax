@@ -14,7 +14,7 @@ import dateutil.parser
 from ..config import config
 from ..transactions import Buy, Sell
 from .base import TaxCalculator, TaxEvent, TaxEventCapitalGains, CalculateCapitalGains
-from .lots import Lot, WalletLedger, FifoSelector, Shortfall
+from .lots import Lot, WalletLedger, FifoSelector, Shortfall, DUST
 from .lot_selection import SpecificSelector, identification_key, standing_order_for
 from .form_1099da import Reconciliation
 from .transfers import (link_transfers, acquired_date, note_token, parse_date, tid_key,
@@ -545,7 +545,7 @@ class Transition(object):
 
         for asset, totals in sorted(self.assets.items()):
             totals['basis_shift'] = totals['traced_cost'] - totals['universal_cost']
-            if totals['traced_quantity'] != totals['universal_quantity']:
+            if abs(totals['traced_quantity'] - totals['universal_quantity']) > DUST:
                 self.failures.append(
                     "%s held at the cutover differs between the universal (%s) and traced (%s) "
                     "methods, check for unmatched transfers" % (
