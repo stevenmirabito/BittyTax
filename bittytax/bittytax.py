@@ -94,12 +94,7 @@ def main():
         print("%ssystem: %s, release: %s" % (Fore.GREEN, platform.system(), platform.release()))
         config.output_config()
 
-    if args.tax_rules == config.TAX_RULES_US_INDIVIDUAL:
-        config.start_of_year_month = 1
-        config.start_of_year_day = 1
-    elif args.tax_rules in config.TAX_RULES_UK_COMPANY:
-        config.start_of_year_month = config.TAX_RULES_UK_COMPANY.index(args.tax_rules) + 1
-        config.start_of_year_day = 1
+    config.set_tax_rules(args.tax_rules)
 
     try:
         transaction_records = do_import(args.filename)

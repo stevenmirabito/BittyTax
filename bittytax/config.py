@@ -114,6 +114,17 @@ class Config(object):
         for name in sorted(self.DEFAULT_CONFIG):
             print("%sconfig: %s = %s" % (Fore.GREEN, name, self.config[name]))
 
+    def set_tax_rules(self, tax_rules):
+        if tax_rules == self.TAX_RULES_US_INDIVIDUAL:
+            self.start_of_year_month = 1
+            self.start_of_year_day = 1
+        elif tax_rules in self.TAX_RULES_UK_COMPANY:
+            self.start_of_year_month = self.TAX_RULES_UK_COMPANY.index(tax_rules) + 1
+            self.start_of_year_day = 1
+        else:
+            self.start_of_year_month = 4
+            self.start_of_year_day = 6
+
     def sym(self):
         if self.ccy == 'GBP':
             return u'\xA3' # £
