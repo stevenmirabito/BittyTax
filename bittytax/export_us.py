@@ -32,7 +32,7 @@ class ExportForm8949(object):
     HEADER = ['Tax Year', 'Part', 'Box', 'Description (a)', 'Date Acquired (b)',
               'Date Sold (c)', 'Proceeds (d)', 'Cost Basis (e)', 'Adjustment Code (f)',
               'Adjustment Amount (g)', 'Gain or Loss (h)', 'Wallet', 'Asset', 'Quantity',
-              'Lot ID', 'Method']
+              'Lot ID', 'Method', 'Gift Basis Rule']
 
     def __init__(self, tax_report):
         self.tax_report = tax_report
@@ -56,7 +56,8 @@ class ExportForm8949(object):
                                        '{:0.2f}'.format(te.gain),
                                        te.wallet, te.asset,
                                        '{:0f}'.format(te.quantity.normalize()),
-                                       te.lot_id or '', te.disposal_type]
+                                       te.lot_id or '', te.disposal_type,
+                                       te.gift_rule or '']
 
     def write_csv(self, filename=None):
         filename = filename or unique_filename(self.DEFAULT_FILENAME)

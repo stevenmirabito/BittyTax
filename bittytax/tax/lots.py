@@ -32,6 +32,10 @@ class Lot(object):
         self.seq = seq
         # (timestamp, from wallet, to wallet) for each move between wallets
         self.history = []
+        # Gifts received where FMV was below the donor's basis (IRC 1015(a)): the basis used
+        #  to work out a loss, and the date the holding period starts for a loss
+        self.loss_basis = None
+        self.gift_date = None
 
     @classmethod
     def from_buy(cls, buy, ledger):
@@ -49,6 +53,9 @@ class Lot(object):
 
         fragment.cost = self.cost * (quantity / self.quantity)
         fragment.fees = self.fees * (quantity / self.quantity)
+        if self.loss_basis is not None:
+            fragment.loss_basis = self.loss_basis * (quantity / self.quantity)
+            self.loss_basis -= fragment.loss_basis
         fragment.quantity = quantity
 
         self.cost -= fragment.cost

@@ -13,6 +13,8 @@ from ..transactions import Buy, Sell
 
 TRANSFER_TOKEN = re.compile(r'(?:^|\s)transfer:(\S+)')
 ACQUIRED_TOKEN = re.compile(r'(?:^|\s)acquired:(\S+)')
+GIFT_TOKENS = {name: re.compile(r'(?:^|\s)%s:(\S+)' % name)
+               for name in ('donor_basis', 'donor_acquired', 'gift_tax_paid')}
 
 
 def note_token(pattern, note):
@@ -25,11 +27,15 @@ def acquired_date(t):
     token = note_token(ACQUIRED_TOKEN, t.note)
     if token is None:
         return None
+    return parse_date(token)
 
-    acquired = dateutil.parser.parse(token)
-    if acquired.tzinfo is None:
-        acquired = acquired.replace(tzinfo=config.TZ_LOCAL)
-    return acquired.astimezone(config.TZ_LOCAL)
+
+def parse_date(token):
+    """Date or timestamp from a note token, local time unless a zone is given."""
+    parsed = dateutil.parser.parse(token)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=config.TZ_LOCAL)
+    return parsed.astimezone(config.TZ_LOCAL)
 
 
 def tid_key(t):

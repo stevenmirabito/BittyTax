@@ -15,7 +15,7 @@ from ..config import config
 from ..transactions import Buy, Sell
 from .base import TaxCalculator, TaxEvent, TaxEventCapitalGains, CalculateCapitalGains
 from .lots import Lot, WalletLedger, FifoSelector, Shortfall
-from .transfers import link_transfers, acquired_date
+from .transfers import link_transfers, acquired_date, note_token, parse_date, GIFT_TOKENS
 
 PRECISION = Decimal('0.00')
 
@@ -142,10 +142,38 @@ class TaxCalculatorUS(TaxCalculator):
 
     def add_lot(self, ledger, t):
         lot = Lot.from_buy(t, ledger)
+        if t.t_type == Buy.TYPE_GIFT_RECEIVED:
+            self.gift_basis(lot, t)
         ledger.add(lot)
         if config.debug:
             print("%slots:   add %s" % (Fore.YELLOW, lot))
         return lot
+
+    def gift_basis(self, lot, t):
+        """Carryover basis for a gift received (IRC 1015, 1223(2)).
+
+        Donor's basis, adjusted for gift tax paid on the appreciation (IRC 1015(d)(6)), and
+        the donor's holding period. If FMV at the gift was below that basis, a loss is
+        measured from FMV with the holding period starting at the gift.
+        """
+        tokens = {name: note_token(pattern, t.note) for name, pattern in GIFT_TOKENS.items()}
+        if tokens['donor_basis'] is None or tokens['donor_acquired'] is None:
+            self.fail("Gift-Received of %s %s [TID:%s] needs donor_basis:<value> and "
+                      "donor_acquired:<date> in its note, using its fair market value as "
+                      "basis" % ('{:0,f}'.format(t.quantity.normalize()), t.asset,
+                                 t._format_tid()))
+            return
+
+        fmv = lot.cost
+        basis = Decimal(tokens['donor_basis'])
+        if tokens['gift_tax_paid'] is not None and fmv > basis and fmv:
+            basis += Decimal(tokens['gift_tax_paid']) * (fmv - basis) / fmv
+
+        lot.cost = basis
+        lot.acquired = parse_date(tokens['donor_acquired'])
+        if fmv < basis:
+            lot.loss_basis = fmv
+            lot.gift_date = t.timestamp
 
     def take_lots(self, ledger, t, quantity=None):
         quantity = t.quantity if quantity is None else quantity
@@ -337,6 +365,8 @@ def merge_fragments(lots, s):
             same[0].quantity += lot.quantity
             same[0].cost += lot.cost
             same[0].fees += lot.fees
+            if lot.loss_basis is not None:
+                same[0].loss_basis += lot.loss_basis
         else:
             merged.append(copy.copy(lot))
     return merged
@@ -444,10 +474,33 @@ class TaxEventCapitalGainsUS(TaxEventCapitalGains):
         self.proceeds = s.proceeds.quantize(PRECISION)
         self.gain = self.proceeds - self.cost - self.fees
         self.acquisition_date = lot.acquired
-        self.holding_period = holding_period(lot.acquired, s.timestamp)
+        self.gift_rule = None
+
+        if lot.loss_basis is not None:
+            self.dual_basis(lot)
+
+        self.holding_period = holding_period(self.acquisition_date, s.timestamp)
         self.form_8949_box = form_8949_box(lot, s, self.holding_period)
         # Form 8949 column (e): cost including acquisition and disposal fees
         self.basis = self.cost + self.fees
+
+    def dual_basis(self, lot):
+        """Gift received with FMV below the donor's basis (Treas. Reg. 1.1015-1(a))."""
+        loss_basis = lot.loss_basis.quantize(PRECISION)
+        if self.gain > 0:
+            # Gain against the donor's basis, holding period tacks
+            self.gift_rule = 'gain'
+        elif self.proceeds - loss_basis - self.fees < 0:
+            # Loss against FMV at the gift, holding period starts at the gift
+            self.gift_rule = 'loss'
+            self.cost = loss_basis
+            self.gain = self.proceeds - self.cost - self.fees
+            self.acquisition_date = lot.gift_date
+        else:
+            # Sold between the two bases: no gain or loss
+            self.gift_rule = 'no gain or loss'
+            self.cost = self.proceeds - self.fees
+            self.gain = Decimal(0)
 
 
 class CalculateCapitalGainsUS(CalculateCapitalGains):
