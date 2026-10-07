@@ -16,6 +16,7 @@ class Config(object):
     TZ_INFOS = {'BST': dateutil.tz.gettz('Europe/London'),
                 'GMT': dateutil.tz.gettz('Europe/London')}
     TZ_LOCAL = dateutil.tz.gettz('Europe/London')
+    TZ_UK = TZ_LOCAL
     TZ_UTC = dateutil.tz.UTC
 
     BITTYTAX_PATH = os.path.expanduser('~/.bittytax')
@@ -68,10 +69,12 @@ class Config(object):
         'data_source_crypto': DATA_SOURCE_CRYPTO,
         'coingecko_api_key': '',
         'coinbase_zero_fees_are_gifts': False,
+        'us_timezone': 'America/Los_Angeles',
     }
 
     def __init__(self):
         self.debug = False
+        self.tax_rules = self.TAX_RULES_UK_INDIVIDUAL
         self.start_of_year_month = 4
         self.start_of_year_day = 6
 
@@ -115,15 +118,27 @@ class Config(object):
             print("%sconfig: %s = %s" % (Fore.GREEN, name, self.config[name]))
 
     def set_tax_rules(self, tax_rules):
+        # Must be called before importing, records are converted to local time as they're created
+        self.tax_rules = tax_rules
+
         if tax_rules == self.TAX_RULES_US_INDIVIDUAL:
+            tz_local = dateutil.tz.gettz(self.config['us_timezone'])
+            if tz_local is None:
+                raise ValueError("Unknown us_timezone: %s" % self.config['us_timezone'])
+            self.TZ_LOCAL = tz_local
             self.start_of_year_month = 1
             self.start_of_year_day = 1
         elif tax_rules in self.TAX_RULES_UK_COMPANY:
+            self.TZ_LOCAL = Config.TZ_UK
             self.start_of_year_month = self.TAX_RULES_UK_COMPANY.index(tax_rules) + 1
             self.start_of_year_day = 1
         else:
+            self.TZ_LOCAL = Config.TZ_UK
             self.start_of_year_month = 4
             self.start_of_year_day = 6
+
+    def is_us(self):
+        return self.tax_rules == self.TAX_RULES_US_INDIVIDUAL
 
     def sym(self):
         if self.ccy == 'GBP':

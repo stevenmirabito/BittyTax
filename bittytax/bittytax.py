@@ -50,8 +50,8 @@ def main():
                         help="enable debug logging")
     parser.add_argument('-ty',
                         '--taxyear',
-                        type=validate_year,
-                        help="tax year must be in the range (%s-%s)" % (
+                        type=int,
+                        help="tax year must be in the range (%s-%s) for UK tax rules" % (
                             min(CCG.CG_DATA_INDIVIDUAL),
                             max(CCG.CG_DATA_INDIVIDUAL)))
     parser.add_argument('--taxrules',
@@ -87,6 +87,12 @@ def main():
 
     args = parser.parse_args()
     config.debug = args.debug
+
+    if args.taxyear and not is_supported_year(args.taxyear, args.tax_rules):
+        parser.error("argument -ty/--taxyear: tax year %d is not supported, "
+                     "must be in the range (%s-%s)" % (args.taxyear,
+                                                       min(CCG.CG_DATA_INDIVIDUAL),
+                                                       max(CCG.CG_DATA_INDIVIDUAL)))
 
     if config.debug:
         print("%s%s v%s" % (Fore.YELLOW, parser.prog, __version__))
@@ -143,16 +149,11 @@ def main():
                   tax.holdings_report,
                   args)
 
-def validate_year(value):
-    year = int(value)
-    if year not in CCG.CG_DATA_INDIVIDUAL:
-        raise argparse.ArgumentTypeError("tax year %d is not supported, "
-                                         "must be in the range (%s-%s)" % (
-            year,
-            min(CCG.CG_DATA_INDIVIDUAL),
-            max(CCG.CG_DATA_INDIVIDUAL)))
-
-    return year
+def is_supported_year(year, tax_rules):
+    if tax_rules == config.TAX_RULES_US_INDIVIDUAL:
+        # No rate tables are needed, gains and income are reported for any year
+        return True
+    return year in CCG.CG_DATA_INDIVIDUAL
 
 def do_import(filename):
     import_records = ImportRecords()
@@ -243,7 +244,7 @@ def do_each_tax_year(tax, tax_year, summary, value_asset):
                 Fore.CYAN,
                 config.format_tax_year(year)))
 
-            if year in CCG.CG_DATA_INDIVIDUAL:
+            if is_supported_year(year, tax.tax_rules):
                 tax.calculate_capital_gains(year)
                 if not summary:
                     tax.calculate_income(year)

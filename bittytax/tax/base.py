@@ -356,7 +356,7 @@ class TaxCalculator(ABC):
 
         if self.tax_rules in config.TAX_RULES_UK_COMPANY:
             self.tax_report[tax_year]["CapitalGains"].tax_estimate_ct(tax_year)
-        else:
+        elif self.tax_rules == config.TAX_RULES_UK_INDIVIDUAL:
             self.tax_report[tax_year]["CapitalGains"].tax_estimate_cgt(tax_year)
 
     def calculate_income(self, tax_year):
@@ -543,7 +543,10 @@ class CalculateCapitalGains(object):
             "total_loss": Decimal(0),
         }
 
-        if tax_rules in config.TAX_RULES_UK_COMPANY:
+        if tax_rules == config.TAX_RULES_US_INDIVIDUAL:
+            # No estimate, US tax depends on the rest of the return
+            self.estimate = None
+        elif tax_rules in config.TAX_RULES_UK_COMPANY:
             self.estimate = {
                 "proceeds_warning": False,
                 "ct_small_rates": [],

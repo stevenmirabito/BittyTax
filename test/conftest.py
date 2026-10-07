@@ -28,10 +28,12 @@ class NoPriceLookup(object):
 @pytest.fixture(autouse=True)
 def isolated_config():
     saved = (copy.deepcopy(config.config), config.ccy, config.asset_priority,
-             config.start_of_year_month, config.start_of_year_day, config.TZ_LOCAL)
+             config.start_of_year_month, config.start_of_year_day, config.TZ_LOCAL,
+             config.tax_rules)
     yield config
     (config.config, config.ccy, config.asset_priority,
-     config.start_of_year_month, config.start_of_year_day, config.TZ_LOCAL) = saved
+     config.start_of_year_month, config.start_of_year_day, config.TZ_LOCAL,
+     config.tax_rules) = saved
 
 
 def use_us_rules(**overrides):

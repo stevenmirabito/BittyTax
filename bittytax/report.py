@@ -262,7 +262,7 @@ class ReportLog(object):
 
         print("\n%sSummary\n" % Fore.CYAN)
         print("%s%-40s %13d" % (Fore.WHITE, "Number of disposals:", cgains.summary['disposals']))
-        if cgains.estimate['proceeds_warning']:
+        if cgains.estimate and cgains.estimate['proceeds_warning']:
             print("%s%-40s %s" % (
                 Fore.WHITE, "Disposal proceeds:",
                 ('*' + self.format_value(cgains.totals['proceeds'])).rjust(13). \
@@ -283,7 +283,7 @@ class ReportLog(object):
             Fore.WHITE, "Losses in the year:",
             self.format_value(abs(cgains.summary['total_loss']))))
 
-        if cgains.estimate['proceeds_warning']:
+        if cgains.estimate and cgains.estimate['proceeds_warning']:
             print("%s*Assets sold are more than 4 times the annual allowance (%s), "
                   "this needs to be reported to HMRC" % (
                       Fore.YELLOW, self.format_value(cgains.estimate['allowance'] * 4)))
@@ -291,7 +291,7 @@ class ReportLog(object):
         if not summary:
             if tax_rules in config.TAX_RULES_UK_COMPANY:
                 self.ct_estimate(tax_year)
-            else:
+            elif tax_rules == config.TAX_RULES_UK_INDIVIDUAL:
                 self.cgt_estimate(tax_year)
 
     def cgt_estimate(self, tax_year):
