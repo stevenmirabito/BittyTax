@@ -30,7 +30,8 @@
 - US tax calculator: short-term/long-term holding periods and Form 8949 boxes (A-F before 2025, G-L after).
 - US tax calculator: carryover and dual basis for gifts received.
 - US tax calculator: standing orders and specific identification of lots (Notice 2025-7 / 2026-20).
-- Accounting tool: --export-8949, --export-lots and --reconcile-1099da for US tax rules.
+- Accounting tool: --export-8949 and --export-lots for US tax rules.
+- Accounting tool: 'Standing Orders', 'Identifications' and '1099-DA' workbook sheets for US tax rules, 1099-DA rows set Form 8949 columns (d)-(g) and are reconciled with your records.
 - Accounting tool: pytest test suite with US and UK regression baselines.
 - Conversion tool: generic parser added to support import from CryptoCredible tool.
 - Conversion tool: added parser for SnowTrace explorer.

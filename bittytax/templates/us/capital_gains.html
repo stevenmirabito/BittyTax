@@ -1,5 +1,16 @@
 {% set cgains = tax_report[tax_year]['CapitalGains'] %}
 <h2>Capital Gains and Losses (Form 8949)</h2>
+<p>Statement attached to Form 8949 for {{ config.format_tax_year(tax_year) }} (Exception 2),
+in place of Parts I and II. Enter the totals for each box on Schedule D and check the box
+shown on each Form 8949 you attach this statement to.</p>
+<table width="100%">
+    <tr>
+        <td width="12%">Name:</td>
+        <td width="48%">{{ config.us_taxpayer_name or '____________________________' }}</td>
+        <td width="20%">Social security number:</td>
+        <td>{{ config.us_taxpayer_ssn or '_____________' }}</td>
+    </tr>
+</table>
 {% for term in ['Short-term', 'Long-term'] %}
     {% set part = cgains.terms[term] %}
     <h3>Part {{ 'I' if term == 'Short-term' else 'II' }} - {{ term }}</h3>

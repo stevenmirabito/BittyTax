@@ -74,6 +74,8 @@ class Config(object):
         'transfer_match_window_hours': 24,
         'transfer_match_tolerance': 0.005,
         'wallets': {},
+        'us_taxpayer_name': '',
+        'us_taxpayer_ssn': '',
     }
 
     def __init__(self):
