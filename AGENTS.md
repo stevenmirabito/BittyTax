@@ -89,6 +89,11 @@ Those are `Gift-*`, `Spend`, `Trade` or income types.
   `2025-03-01T04:00:00-08:00` (`UTC`, `GMT` and `BST` abbreviations also work). Text with no
   zone is read as UTC. The tax year, holding period and the 2025-01-01 per-wallet cutover are
   then worked out in Pacific time.
+- **Hand-entered rows are the usual source of time errors.** Typing a Pacific wall-clock time
+  into an Excel date cell records it as UTC, 7 or 8 hours early. In the existing records this
+  was the cause of most unmatched transfers, and of sales that appeared to come before the
+  purchases that funded them. Convert to UTC before entering, or type text with an offset
+  (`2024-03-11T15:57:00-07:00`). If the source has a Unix timestamp, use it.
 - **Fees** go in the Fee columns, never netted silently:
   - Fee in the *sold* asset: Sell Quantity is the **net** amount (after the fee).
   - Fee in the *bought* asset: Buy Quantity is the **gross** amount (before the fee).
