@@ -76,6 +76,7 @@
             {% endif %}
             {% include "capital_gains.html" %}
             {% if not args.summary %}
+                {% include "reconciliation.html" %}
                 {% include "non_sales.html" %}
                 {% include "income.html" %}
             {% endif %}

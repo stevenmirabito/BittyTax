@@ -69,7 +69,7 @@ class ReportPdf(object):
     def datefilter(date):
         if not date:
             return "N/A"
-        if isinstance(date, datetime):
+        if hasattr(date, 'strftime'):
             return date.strftime(config.date_format)
         return dateutil.parser.parse(date).strftime(config.date_format)
 
@@ -548,8 +548,9 @@ class ReportLogUS(ReportLog):
             self.transition(self.tax_report[tax_year]['Transition'])
 
         print("%sCapital Gains and Losses (Form 8949)" % Fore.CYAN)
-        header = "%-28s %-10s %-10s %-24s %13s %13s %13s" % (
-            'Description', 'Acquired', 'Sold', 'Wallet', 'Proceeds', 'Cost Basis', 'Gain')
+        header = "%-28s %-10s %-10s %-16s %13s %13s %4s %13s %13s" % (
+            'Description (a)', 'Acquired', 'Sold', 'Wallet', 'Proceeds (d)', 'Basis (e)',
+            '(f)', 'Adj (g)', 'Gain (h)')
 
         for part, term in zip(('I', 'II'), self.TERMS):
             print("\n%sPart %s - %s" % (Fore.CYAN, part, term))
@@ -560,48 +561,75 @@ class ReportLogUS(ReportLog):
                 for wallet in sorted(boxes[box]['wallets']):
                     for asset in sorted(boxes[box]['wallets'][wallet]):
                         for te in boxes[box]['wallets'][wallet][asset]:
-                            print("%s%-28s %-10s %-10s %-24s %13s %13s %s%13s" % (
+                            print("%s%-28s %-10s %-10s %-16s %13s %13s %4s %13s %s%13s" % (
                                 Fore.WHITE,
                                 te.format_asset(),
                                 self.format_date(te.acquisition_date)
                                 if te.acquisition_date else 'Unknown',
                                 self.format_date(te.date),
-                                wallet[:24],
-                                self.format_value(te.proceeds),
-                                self.format_value(te.basis),
+                                wallet[:16],
+                                self.format_value(te.form_proceeds),
+                                self.format_value(te.form_basis),
+                                te.adjustment_code,
+                                self.format_value(te.adjustment)
+                                if te.adjustment_code else '',
                                 Fore.RED if te.gain < 0 else Fore.WHITE,
                                 self.format_value(te.gain)))
                 self._totals_row('Box %s Total' % box, boxes[box]['totals'], header)
 
         print("\n%sSummary\n" % Fore.CYAN)
-        print("%s%-20s %10s %13s %13s %13s" % (Fore.YELLOW, '', 'Disposals', 'Proceeds',
-                                                'Cost Basis', 'Gain'))
-        for term in self.TERMS:
-            totals = cgains.terms[term]['totals']
-            print("%s%-20s %10d %13s %13s %s%13s" % (
-                Fore.WHITE, term, totals['disposals'],
+        print("%s%-20s %10s %13s %13s %13s %13s" % (Fore.YELLOW, '', 'Disposals', 'Proceeds',
+                                                     'Cost Basis', 'Adjustment', 'Gain'))
+        for term in self.TERMS + ('Total',):
+            totals = cgains.terms[term]['totals'] if term != 'Total' else cgains.form_totals
+            print("%s%-20s %10d %13s %13s %13s %s%13s" % (
+                Fore.YELLOW+Style.BRIGHT if term == 'Total' else Fore.WHITE, term,
+                totals['disposals'],
                 self.format_value(totals['proceeds']),
                 self.format_value(totals['basis']),
+                self.format_value(totals['adjustment']),
                 Fore.RED if totals['gain'] < 0 else Fore.WHITE,
-                self.format_value(totals['gain'])))
-        print("%s%-20s %10d %13s %13s %s%13s" % (
-            Fore.YELLOW+Style.BRIGHT, 'Total', cgains.summary['disposals'],
-            self.format_value(cgains.totals['proceeds']),
-            self.format_value(cgains.totals['cost'] + cgains.totals['fees']),
-            Fore.RED if cgains.totals['gain'] < 0 else Fore.YELLOW,
-            self.format_value(cgains.totals['gain'])) + Style.NORMAL)
+                self.format_value(totals['gain'])) + Style.NORMAL)
 
         if not summary:
+            self.reconciliation(self.tax_report[tax_year].get('Reconciliation'))
             self.non_sales(cgains)
 
     def _totals_row(self, label, totals, header):
         print("%s%s" % (Fore.YELLOW, '_' * len(header)))
-        print("%s%-75s %13s %13s %s%13s" % (
+        print("%s%-67s %13s %13s %4s %13s %s%13s" % (
             Fore.YELLOW, label,
             self.format_value(totals['proceeds']),
             self.format_value(totals['basis']),
+            '',
+            self.format_value(totals['adjustment']),
             Fore.RED if totals['gain'] < 0 else Fore.YELLOW,
             self.format_value(totals['gain'])))
+
+    def reconciliation(self, lines):
+        if not lines:
+            return
+
+        print("\n%sForm 1099-DA Reconciliation (net of selling costs)" % Fore.CYAN)
+        print("%s%-10s %-16s %-8s %13s %13s %13s %13s  %s" % (
+            Fore.YELLOW, 'Sold', 'Wallet', 'Asset', '1099-DA Proc', 'Records Proc',
+            '1099-DA Basis', 'Records Basis', 'Status'))
+
+        def value(amount):
+            return self.format_value(amount) if amount is not None else ''
+
+        for line in lines:
+            print("%s%-10s %-16s %-8s %13s %13s %13s %13s  %s%s%s" % (
+                Fore.WHITE, self.format_date(datetime(line.date_sold.year,
+                                                      line.date_sold.month,
+                                                      line.date_sold.day)),
+                line.wallet[:16], line.asset,
+                value(line.broker('proceeds')), value(line.records('proceeds')),
+                value(line.broker('cost_basis')), value(line.records('basis')),
+                Fore.RED if line.status in ('Review', 'Not in records') else Fore.WHITE,
+                line.status, ' (%s)' % line.codes if line.codes else ''))
+            if line.note:
+                print("%s%-10s %s" % (Fore.CYAN, '', line.note))
 
     def non_sales(self, cgains):
         if not cgains.non_sales:

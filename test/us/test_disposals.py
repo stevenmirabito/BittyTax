@@ -9,7 +9,7 @@ import pytest
 from bittytax.config import config
 from bittytax.tax.us import (LONG_TERM, SHORT_TERM, TaxEventCapitalGainsUS, TaxEventNonSale,
                              holding_period)
-from conftest import run_tax, use_us_rules, write_csv
+from conftest import run_tax, us_records, use_us_rules, write_csv
 
 
 def _events(tax, cls):
@@ -89,33 +89,29 @@ def test_lost_buyback_is_ignored(tmp_path):
     assert tax.ledger.open_lots() == []
 
 
-@pytest.mark.parametrize('wallets, acquired, sold, box', [
-    ({}, '2023-01-01', '2024-06-01', 'F'),
-    ({}, '2024-01-01', '2024-06-01', 'C'),
-    ({}, '2023-01-01', '2025-06-01', 'L'),
-    ({'Exchange': {'issues_1099da': True}}, '2025-01-01', '2025-06-01', 'H'),
-    ({'Exchange': {'issues_1099da': True}}, '2023-01-01', '2025-06-01', 'K'),
-    ({'Exchange': {'issues_1099da': True}}, '2026-01-02', '2026-06-01', 'G'),
-    ({'Exchange': {'issues_1099da': True}}, '2026-01-02', '2027-06-01', 'J'),
-    ({'Exchange': {'custody': 'self'}}, '2026-01-02', '2026-06-01', 'I'),
+FORM = ['Form Year', 'Wallet', 'Asset', 'Date Sold', 'Quantity', 'Proceeds', 'Cost Basis',
+        'Date Acquired', 'Term', 'Basis Reported']
+
+
+@pytest.mark.parametrize('acquired, sold, form, box', [
+    ('2023-01-01', '2024-06-01', None, 'F'),
+    ('2024-01-01', '2024-06-01', None, 'C'),
+    ('2023-01-01', '2025-06-01', None, 'L'),
+    ('2025-01-01', '2025-06-01', None, 'I'),
+    ('2025-01-01', '2025-06-01', ('', 'No'), 'H'),
+    ('2023-01-01', '2025-06-01', ('', 'No'), 'K'),
+    ('2026-01-02', '2026-06-01', ('1000', 'Yes'), 'G'),
+    ('2025-01-02', '2026-06-01', ('1000', 'Yes'), 'J'),
 ])
-def test_form_8949_box(tmp_path, wallets, acquired, sold, box):
-    use_us_rules(wallets=wallets)
+def test_form_8949_box(tmp_path, acquired, sold, form, box):
+    use_us_rules()
+    records = None
+    if form:
+        records = us_records(**{'1099-DA Exchange': [FORM, [
+            sold[:4], 'Exchange', 'ETH', sold, '1', '2000', form[0], '', '', form[1]]]})
     tax = run_tax(write_csv(tmp_path, [
         'Trade,1,ETH,1000,1000,USD,,,,,Exchange,%sT12:00:00Z,' % acquired,
         'Trade,2000,USD,,1,ETH,2000,,,,Exchange,%sT12:00:00Z,' % sold,
-    ]), config.TAX_RULES_US_INDIVIDUAL)
+    ]), config.TAX_RULES_US_INDIVIDUAL, records=records)
     [event] = _events(tax, TaxEventCapitalGainsUS)
     assert event.form_8949_box == box
-
-
-def test_transferred_in_units_are_noncovered(tmp_path):
-    use_us_rules(wallets={'Exchange': {'issues_1099da': True}})
-    tax = run_tax(write_csv(tmp_path, [
-        'Trade,1,ETH,1000,1000,USD,,,,,Other,2026-01-02T12:00:00Z,',
-        'Withdrawal,,,,1,ETH,,,,,Other,2026-02-01T12:00:00Z,',
-        'Deposit,1,ETH,,,,,,,,Exchange,2026-02-01T12:30:00Z,',
-        'Trade,2000,USD,,1,ETH,2000,,,,Exchange,2026-06-01T12:00:00Z,',
-    ]), config.TAX_RULES_US_INDIVIDUAL)
-    [event] = _events(tax, TaxEventCapitalGainsUS)
-    assert event.form_8949_box == 'H'

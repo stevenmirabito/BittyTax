@@ -1,0 +1,37 @@
+{% if 'Reconciliation' in tax_report[tax_year] %}
+<h2>Form 1099-DA Reconciliation</h2>
+<p>Sales reported on Form 1099-DA compared with your records. Under Notice 2026-20 the units
+identified in your records are the ones sold, differences are corrected in Form 8949
+column (g). Proceeds and basis are net of selling costs, as a 1099-DA reports them.</p>
+<table repeat="1" width="100%">
+    <tr>
+        <th align="left">Sold</th>
+        <th align="left">Wallet</th>
+        <th align="left">Asset</th>
+        <th align="right">1099-DA Proceeds</th>
+        <th align="right">Records Proceeds</th>
+        <th align="right">1099-DA Basis</th>
+        <th align="right">Records Basis</th>
+        <th align="left">&nbsp;&nbsp;Status</th>
+    </tr>
+    {% for line in tax_report[tax_year]['Reconciliation'] %}
+        {% set broker_proceeds = line.broker('proceeds') %}
+        {% set records_proceeds = line.records('proceeds') %}
+        {% set broker_basis = line.broker('cost_basis') %}
+        {% set records_basis = line.records('basis') %}
+        <tr>
+            <td>{{ line.date_sold|datefilter }}</td>
+            <td>{{ line.wallet }}</td>
+            <td>{{ line.asset }}</td>
+            <td align="right">{% if broker_proceeds is not none %}{{ broker_proceeds|valuefilter }}{% endif %}</td>
+            <td align="right">{% if records_proceeds is not none %}{{ records_proceeds|valuefilter }}{% endif %}</td>
+            <td align="right">{% if broker_basis is not none %}{{ broker_basis|valuefilter }}{% endif %}</td>
+            <td align="right">{% if records_basis is not none %}{{ records_basis|valuefilter }}{% endif %}</td>
+            <td{% if line.status in ('Review', 'Not in records') %} class="red_font"{% endif %}>&nbsp;&nbsp;{{ line.status }}{% if line.codes %} ({{ line.codes }}){% endif %}</td>
+        </tr>
+        {% if line.note %}
+            <tr><td></td><td colspan="7"><i>{{ line.note }}</i></td></tr>
+        {% endif %}
+    {% endfor %}
+</table>
+{% endif %}

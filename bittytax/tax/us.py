@@ -16,6 +16,7 @@ from ..transactions import Buy, Sell
 from .base import TaxCalculator, TaxEvent, TaxEventCapitalGains, CalculateCapitalGains
 from .lots import Lot, WalletLedger, FifoSelector, Shortfall
 from .lot_selection import SpecificSelector, identification_key, standing_order_for
+from .form_1099da import Reconciliation
 from .transfers import link_transfers, acquired_date, note_token, parse_date, GIFT_TOKENS
 
 PRECISION = Decimal('0.00')
@@ -50,6 +51,7 @@ class TaxCalculatorUS(TaxCalculator):
         self.links = None
         self.ledger = None
         self.transition = None
+        self.reconciliation = None
         self.selector = FifoSelector()
         self.integrity_failures = []
         self.warnings = []
@@ -92,6 +94,15 @@ class TaxCalculatorUS(TaxCalculator):
 
         self.ledger = self.replay(after, traced, 'per-wallet', True)
         self.holdings = self.ledger.holdings()
+
+        events = [te for events in self.tax_events.values() for te in events
+                  if isinstance(te, TaxEventCapitalGainsUS)]
+        self.reconciliation = Reconciliation(
+            self.us_records.forms_1099da if self.us_records else [], events)
+        for failure in self.reconciliation.failures:
+            self.fail(failure)
+        for warning in self.reconciliation.warnings:
+            self.warn(warning)
 
         for idents in self.identifications.values():
             for ident in idents:
@@ -286,9 +297,11 @@ class TaxCalculatorUS(TaxCalculator):
         if not self._record_events:
             return
 
+        sale_id = t._format_tid()
         for lot, s in self.split_sell(t, lots):
             self.log('Dispose', t, lot)
             tax_event = TaxEventCapitalGainsUS(lot.method or self.selector.name, lot, s)
+            tax_event.sale_id = sale_id
             self.tax_events[self.which_tax_year(tax_event.date)].append(tax_event)
             if config.debug:
                 print("%slots:   %s <- %s" % (Fore.CYAN, tax_event, lot))
@@ -401,6 +414,11 @@ class TaxCalculatorUS(TaxCalculator):
         if self.transition and self.transition.cutover.year == tax_year:
             self.tax_report[tax_year]['Transition'] = self.transition
 
+        lines = [line for line in self.reconciliation.lines if line.tax_year == tax_year] \
+            if self.reconciliation else []
+        if lines:
+            self.tax_report[tax_year]['Reconciliation'] = lines
+
     def calculate_holdings(self, value_asset):
         """Open lots by wallet, with the same per asset roll-up as the UK report."""
         super(TaxCalculatorUS, self).calculate_holdings(value_asset)
@@ -444,7 +462,7 @@ def merge_fragments(lots, s):
     which arrived by transfer isn't covered for broker basis reporting.
     """
     def box(lot):
-        return form_8949_box(lot, s, holding_period(lot.acquired, s.timestamp))
+        return form_8949_box(s, holding_period(lot.acquired, s.timestamp))
 
     merged = []
     for lot in lots:
@@ -526,28 +544,17 @@ def wallet_info(wallet):
     return (config.wallets or {}).get(wallet) or {}
 
 
-def form_8949_box(lot, s, term):
-    """Form 8949 box: A-F before 2025, then the digital asset boxes G-L.
+def form_8949_box(s, term):
+    """Form 8949 box before any 1099-DA is applied: C/F before 2025, I/L after.
 
-    G/J: reported on a 1099-DA with basis reported to the IRS (covered units)
-    H/K: reported on a 1099-DA without basis (noncovered units)
-    I/L: not reported on a 1099-DA
+    A matching row on a '1099-DA' sheet moves the sale to G/J (basis reported to the IRS)
+    or H/K (basis not reported), see form_1099da.
     """
     short = term == SHORT_TERM
     if s.timestamp.astimezone(config.TZ_LOCAL).year < 2025:
         # Digital assets were rarely reported on a 1099-B
         return 'C' if short else 'F'
-
-    info = wallet_info(s.wallet)
-    if not info.get('issues_1099da'):
-        return 'I' if short else 'L'
-
-    # Basis reporting is mandatory for units acquired in the account from 2026
-    covered = (lot.acquired is not None and not lot.history
-               and lot.acquired.astimezone(config.TZ_LOCAL).year >= 2026)
-    if covered:
-        return 'G' if short else 'J'
-    return 'H' if short else 'K'
+    return 'I' if short else 'L'
 
 
 class TaxEventCapitalGainsUS(TaxEventCapitalGains):
@@ -572,9 +579,17 @@ class TaxEventCapitalGainsUS(TaxEventCapitalGains):
             self.dual_basis(lot)
 
         self.holding_period = holding_period(self.acquisition_date, s.timestamp)
-        self.form_8949_box = form_8949_box(lot, s, self.holding_period)
-        # Form 8949 column (e): cost including acquisition and disposal fees
+        self.form_8949_box = form_8949_box(s, self.holding_period)
+        # Cost including acquisition and disposal fees
         self.basis = self.cost + self.fees
+        self.sale_id = None
+
+        # Form 8949 columns (d) to (g), replaced by the broker's figures if a 1099-DA
+        #  reported this sale. Column (h) is self.gain
+        self.form_proceeds = self.proceeds
+        self.form_basis = self.basis
+        self.adjustment_code = ''
+        self.adjustment = Decimal(0)
 
     def dual_basis(self, lot):
         """Gift received with FMV below the donor's basis (Treas. Reg. 1.1015-1(a))."""
@@ -617,18 +632,20 @@ class CalculateCapitalGainsUS(CalculateCapitalGains):
         super(CalculateCapitalGainsUS, self).__init__(tax_year, tax_rules)
         self.terms = {term: {'boxes': {}, 'totals': self._totals()}
                       for term in (SHORT_TERM, LONG_TERM)}
+        self.form_totals = self._totals()
         self.non_sales = {}
 
     @staticmethod
     def _totals():
         return {'disposals': 0, 'proceeds': Decimal(0), 'basis': Decimal(0),
-                'gain': Decimal(0)}
+                'adjustment': Decimal(0), 'gain': Decimal(0)}
 
     @staticmethod
     def _add(totals, te):
         totals['disposals'] += 1
-        totals['proceeds'] += te.proceeds
-        totals['basis'] += te.basis
+        totals['proceeds'] += te.form_proceeds
+        totals['basis'] += te.form_basis
+        totals['adjustment'] += te.adjustment
         totals['gain'] += te.gain
 
     def tax_summary(self, te):
@@ -640,6 +657,7 @@ class CalculateCapitalGainsUS(CalculateCapitalGains):
         box['wallets'].setdefault(te.wallet, {}).setdefault(te.asset, []).append(te)
         self._add(box['totals'], te)
         self._add(term['totals'], te)
+        self._add(self.form_totals, te)
 
     def non_sale(self, te):
         self.non_sales.setdefault(te.type, []).append(te)

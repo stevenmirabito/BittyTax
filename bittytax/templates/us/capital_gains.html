@@ -10,35 +10,41 @@
         {% set box_data = part.boxes[box] %}
         <h4>Box {{ box }} - {{ cgains.BOX_DESCRIPTIONS[box] }}</h4>
         {% for wallet in box_data.wallets|sort %}
-            {% set wallet_totals = namespace(proceeds=0, basis=0, gain=0) %}
+            {% set wallet_totals = namespace(proceeds=0, basis=0, adjustment=0, gain=0) %}
             <p><b>{{ wallet }}</b></p>
             <table repeat="1" width="100%">
                 <tr>
-                    <th align="left" width="25%">Description (a)</th>
+                    <th align="left" width="22%">Description (a)</th>
                     <th align="left">Acquired (b)</th>
                     <th align="left">Sold (c)</th>
                     <th align="right">Proceeds (d)</th>
                     <th align="right">Cost Basis (e)</th>
-                    <th align="right">Gain or Loss (h)</th>
+                    <th align="center">Code (f)</th>
+                    <th align="right">Adj. (g)</th>
+                    <th align="right">Gain (h)</th>
                 </tr>
                 {% for asset in box_data.wallets[wallet]|sort %}
-                    {% set asset_totals = namespace(disposals=0, proceeds=0, basis=0, gain=0) %}
+                    {% set asset_totals = namespace(disposals=0, proceeds=0, basis=0, adjustment=0, gain=0) %}
                     {% for te in box_data.wallets[wallet][asset] %}
                         {% set asset_totals.disposals = asset_totals.disposals + 1 %}
-                        {% set asset_totals.proceeds = asset_totals.proceeds + te.proceeds %}
-                        {% set asset_totals.basis = asset_totals.basis + te.basis %}
+                        {% set asset_totals.proceeds = asset_totals.proceeds + te.form_proceeds %}
+                        {% set asset_totals.basis = asset_totals.basis + te.form_basis %}
+                        {% set asset_totals.adjustment = asset_totals.adjustment + te.adjustment %}
                         {% set asset_totals.gain = asset_totals.gain + te.gain %}
                         <tr>
                             <td>{{ te.format_asset() }}</td>
                             <td>{{ te.acquisition_date|datefilter }}</td>
                             <td>{{ te.date|datefilter }}</td>
-                            <td align="right">{{ te.proceeds|valuefilter }}</td>
-                            <td align="right">{{ te.basis|valuefilter }}</td>
+                            <td align="right">{{ te.form_proceeds|valuefilter }}</td>
+                            <td align="right">{{ te.form_basis|valuefilter }}</td>
+                            <td align="center">{{ te.adjustment_code }}</td>
+                            <td align="right">{% if te.adjustment_code %}{{ te.adjustment|valuefilter }}{% endif %}</td>
                             <td align="right"{% if te.gain < 0 %} class="red_font"{% endif %}>{{ te.gain|valuefilter }}</td>
                         </tr>
                     {% endfor %}
                     {% set wallet_totals.proceeds = wallet_totals.proceeds + asset_totals.proceeds %}
                     {% set wallet_totals.basis = wallet_totals.basis + asset_totals.basis %}
+                    {% set wallet_totals.adjustment = wallet_totals.adjustment + asset_totals.adjustment %}
                     {% set wallet_totals.gain = wallet_totals.gain + asset_totals.gain %}
                     {% if asset_totals.disposals > 1 %}
                         <tr class="subtotal_row">
@@ -47,6 +53,8 @@
                             <td></td>
                             <td align="right">{{ asset_totals.proceeds|valuefilter }}</td>
                             <td align="right">{{ asset_totals.basis|valuefilter }}</td>
+                            <td></td>
+                            <td align="right">{{ asset_totals.adjustment|valuefilter }}</td>
                             <td align="right"{% if asset_totals.gain < 0 %} class="red_font"{% endif %}>{{ asset_totals.gain|valuefilter }}</td>
                         </tr>
                     {% endif %}
@@ -57,6 +65,8 @@
                     <td></td>
                     <td align="right">{{ wallet_totals.proceeds|valuefilter }}</td>
                     <td align="right">{{ wallet_totals.basis|valuefilter }}</td>
+                    <td></td>
+                    <td align="right">{{ wallet_totals.adjustment|valuefilter }}</td>
                     <td align="right"{% if wallet_totals.gain < 0 %} class="red_font"{% endif %}>{{ wallet_totals.gain|valuefilter }}</td>
                 </tr>
             </table>
@@ -64,11 +74,13 @@
         {% endfor %}
         <table width="100%">
             <tr class="total_row">
-                <td width="25%">Box {{ box }} Total</td>
+                <td width="22%">Box {{ box }} Total</td>
                 <td></td>
                 <td></td>
                 <td align="right">{{ box_data.totals.proceeds|valuefilter }}</td>
                 <td align="right">{{ box_data.totals.basis|valuefilter }}</td>
+                <td></td>
+                <td align="right">{{ box_data.totals.adjustment|valuefilter }}</td>
                 <td align="right"{% if box_data.totals.gain < 0 %} class="red_font"{% endif %}>{{ box_data.totals.gain|valuefilter }}</td>
             </tr>
         </table>
@@ -82,6 +94,7 @@
         <th align="right">Disposals</th>
         <th align="right">Proceeds</th>
         <th align="right">Cost Basis</th>
+        <th align="right">Adjustment</th>
         <th align="right">Gain or Loss</th>
     </tr>
     {% for term in ['Short-term', 'Long-term'] %}
@@ -91,14 +104,16 @@
             <td align="right">{{ totals.disposals }}</td>
             <td align="right">{{ totals.proceeds|valuefilter }}</td>
             <td align="right">{{ totals.basis|valuefilter }}</td>
+            <td align="right">{{ totals.adjustment|valuefilter }}</td>
             <td align="right"{% if totals.gain < 0 %} class="red_font"{% endif %}>{{ totals.gain|valuefilter }}</td>
         </tr>
     {% endfor %}
     <tr class="total_row">
         <td>Total</td>
-        <td align="right">{{ cgains.summary['disposals'] }}</td>
-        <td align="right">{{ cgains.totals['proceeds']|valuefilter }}</td>
-        <td align="right">{{ (cgains.totals['cost'] + cgains.totals['fees'])|valuefilter }}</td>
-        <td align="right"{% if cgains.totals['gain'] < 0 %} class="red_font"{% endif %}>{{ cgains.totals['gain']|valuefilter }}</td>
+        <td align="right">{{ cgains.form_totals.disposals }}</td>
+        <td align="right">{{ cgains.form_totals.proceeds|valuefilter }}</td>
+        <td align="right">{{ cgains.form_totals.basis|valuefilter }}</td>
+        <td align="right">{{ cgains.form_totals.adjustment|valuefilter }}</td>
+        <td align="right"{% if cgains.form_totals.gain < 0 %} class="red_font"{% endif %}>{{ cgains.form_totals.gain|valuefilter }}</td>
     </tr>
 </table>

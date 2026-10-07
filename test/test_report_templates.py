@@ -7,7 +7,8 @@ import os
 from bittytax.audit import AuditRecords
 from bittytax.config import config
 from bittytax.report import ReportPdf
-from conftest import FIXTURES, import_csv, run_tax, use_uk_rules, use_us_rules
+from conftest import (FIXTURES, import_csv, run_tax, use_uk_rules, use_us_rules,
+                      write_workbook)
 
 
 class NoCurrentPrice(object):
@@ -49,3 +50,19 @@ def test_us_report_uses_us_templates():
     assert 'Box F - Long-term transactions not reported to you on Form 1099-B' in html
     assert 'Per-Wallet Basis at' in html
     assert 'Current Holdings by Wallet' in html
+
+
+def test_us_report_with_1099da_sheets(tmp_path):
+    use_us_rules()
+    rows = open(os.path.join(FIXTURES, 'multi_wallet.csv')).read().splitlines()[1:]
+    form = ['Form Year', 'Wallet', 'Asset', 'Date Sold', 'Quantity', 'Proceeds', 'Cost Basis',
+            'Date Acquired', 'Term', 'Basis Reported']
+    path = write_workbook(tmp_path, {
+        'Transactions': rows,
+        '1099-DA Coinbase': [form, [2026, 'Coinbase', 'ETH', '2026-01-15', 3, 9000, 4200,
+                                    '2021-03-05', 'Long', 'Yes']],
+    })
+    html = _render(path, config.TAX_RULES_US_INDIVIDUAL, [2026])
+    assert 'Form 1099-DA Reconciliation' in html
+    assert 'Box J - Long-term digital asset transactions reported on Form 1099-DA' in html
+    assert 'Adj. (g)' in html
