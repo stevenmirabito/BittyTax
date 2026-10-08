@@ -121,6 +121,14 @@ class AuditRecords(object):
             if asset in config.fiat_list:
                 continue
 
+            # The US ledger already treats <= DUST as source floating-point
+            # residue. Its final aggregate check must use the same threshold;
+            # keep the UK section 104 comparison exact.
+            if config.tax_rules == config.TAX_RULES_US_INDIVIDUAL:
+                held = holdings[asset].quantity if asset in holdings else Decimal(0)
+                if abs(self.totals[asset] - held) <= DUST:
+                    continue
+
             if asset in holdings:
                 if self.totals[asset] == holdings[asset].quantity:
                     if config.debug:

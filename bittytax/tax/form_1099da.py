@@ -105,44 +105,38 @@ class Reconciliation(object):
         unmatched_sales = list(sales)
         unmatched_forms = sorted(forms, key=lambda f: (f.wallet, f.asset, f.date_sold))
 
-        # Pass 1: a 1099-DA row for each sale
-        for form in list(unmatched_forms):
-            candidates = [s for s in unmatched_sales
-                          if s.wallet == form.wallet and s.asset == form.asset
-                          and form.date_sold in s.dates()
-                          and abs(s.quantity - form.quantity) <= QUANTITY_TOLERANCE]
-            if candidates:
-                sale = min(candidates, key=lambda s: s.timestamp)
-                self._apply([form], [sale])
-                unmatched_forms.remove(form)
-                unmatched_sales.remove(sale)
-
-        # Pass 2: the broker split or combined sales differently on the same day
         days = {}
         for form in unmatched_forms:
-            days.setdefault((form.wallet, form.asset, form.date_sold), [[], []])[0].append(form)
-        for sale in unmatched_sales:
-            for date in sorted(sale.dates()):
-                if (sale.wallet, sale.asset, date) in days:
-                    days[(sale.wallet, sale.asset, date)][1].append(sale)
-                    break
+            days.setdefault((form.wallet, form.asset, form.date_sold), []).append(form)
 
-        for (wallet, asset, date), (day_forms, day_sales) in sorted(days.items()):
+        # Matching is read-only. Resolve dates, then construct complete row
+        # attribution plans, and only then apply broker figures to tax events.
+        resolved = self._resolve_dates(days, sales)
+        rejected = {}
+        for key, day_sales in resolved.items():
+            plan, reason = self._attribution_plan(days[key], day_sales)
+            if plan is None:
+                rejected[key] = reason
+                continue
+            for row_forms, row_sales in plan:
+                self._apply(row_forms, row_sales)
+            for sale in day_sales:
+                unmatched_sales.remove(sale)
+
+        for (wallet, asset, date), day_forms in sorted(days.items()):
+            key = (wallet, asset, date)
+            if key in resolved and key not in rejected:
+                continue
             quantity = sum((f.quantity for f in day_forms), Decimal(0))
-            if day_sales and abs(quantity - sum((s.quantity for s in day_sales),
-                                                Decimal(0))) <= QUANTITY_TOLERANCE:
-                self._apply(day_forms, day_sales)
-                for sale in day_sales:
-                    unmatched_sales.remove(sale)
-            else:
-                line = ReconciliationLine(
-                    NOT_IN_RECORDS, wallet, asset, date, day_forms, [],
-                    note="The broker reported a sale which isn't in your records, check for "
-                         "missing or misdated transactions")
-                self.lines.append(line)
-                self.failures.append("%s: 1099-DA sale of %s %s from %s on %s isn't in your "
-                                     "records" % (day_forms[0].source, quantity, asset, wallet,
-                                                  date.isoformat()))
+            line = ReconciliationLine(
+                NOT_IN_RECORDS, wallet, asset, date, day_forms, [],
+                note=rejected.get(key, "The broker reported a sale which isn't uniquely "
+                                  "matched in your records, check for missing, misdated "
+                                  "or ambiguous transactions"))
+            self.lines.append(line)
+            self.failures.append("%s: 1099-DA sale of %s %s from %s on %s isn't in your "
+                                 "records" % (day_forms[0].source, quantity, asset, wallet,
+                                              date.isoformat()))
 
         for sale in unmatched_sales:
             if (sale.wallet, _local_date(sale.timestamp).year) in covered:
@@ -170,12 +164,151 @@ class Reconciliation(object):
         return sorted((Sale(group) for group in by_sale.values()),
                       key=lambda s: (s.timestamp, s.events[0].sale_id))
 
+    @classmethod
+    def _resolve_dates(cls, days, sales):
+        """Reserve unique, non-overlapping day groups without changing any tax event.
+
+        Both local and UTC dates are evidence, not a preference order. A forced
+        group can eliminate an alternative on another date; conflicting forced
+        claims and unresolved alternatives remain unmatched.
+        """
+        pending, available, resolved = dict(days), list(sales), {}
+        while pending:
+            choices = {key: cls._day_candidates(key, forms, available)
+                       for key, forms in pending.items()}
+            unique = {key: groups[0] for key, groups in choices.items() if len(groups) == 1}
+            ready = [key for key, group in unique.items()
+                     if not any(set(group) & set(other) for other_key, other in unique.items()
+                                if other_key != key)]
+            if not ready:
+                break
+            for key in sorted(ready):
+                resolved[key] = unique[key]
+                pending.pop(key)
+                for sale in unique[key]:
+                    available.remove(sale)
+        return resolved
+
+    @staticmethod
+    def _row_matches(forms, sales):
+        """Quantity edges use the tolerance independently for each broker row."""
+        return {form: [sale for sale in sales
+                       if abs(sale.quantity - form.quantity) <= QUANTITY_TOLERANCE]
+                for form in forms}
+
+    @classmethod
+    def _individual_plan(cls, forms, sales):
+        """Return a unique row-to-sale assignment, or None; extra sales are allowed.
+
+        A row with one available sale forces that edge. Remove forced edges and
+        repeat. Two rows forcing the same sale are contradictory; a residual
+        graph with multiple choices per row cannot establish unique attribution.
+        No sums are checked here: each edge has already passed its own tolerance.
+        """
+        remaining_forms, remaining_sales, plan = list(forms), list(sales), []
+        while remaining_forms:
+            matches = cls._row_matches(remaining_forms, remaining_sales)
+            forced = [(form, group[0]) for form, group in matches.items() if len(group) == 1]
+            if any(not group for group in matches.values()) or not forced:
+                return None
+            if len({sale for _, sale in forced}) != len(forced):
+                return None
+            for form, sale in forced:
+                plan.append(([form], [sale]))
+                remaining_forms.remove(form)
+                remaining_sales.remove(sale)
+        return plan
+
+    @classmethod
+    def _day_candidates(cls, key, forms, sales):
+        wallet, asset, date = key
+        quantity = sum((f.quantity for f in forms), Decimal(0))
+        eligible = [s for s in sales if s.wallet == wallet and s.asset == asset
+                    and date in s.dates()]
+        groups = [[s for s in eligible if date_of(s.timestamp) == date]
+                  for date_of in (_local_date, _utc_date)]
+        if len(forms) == 1:
+            groups.extend([s] for s in eligible)
+        candidates = []
+        for group in groups:
+            if group and abs(quantity - sum((s.quantity for s in group), Decimal(0))) \
+                    <= QUANTITY_TOLERANCE and group not in candidates:
+                candidates.append(group)
+
+        # Partial-day rows are independent measurements, not a single daily
+        # aggregate. Do not reject valid edges because their rounding adds up.
+        individual = cls._individual_plan(forms, eligible)
+        if individual is not None:
+            identified = {sale for _, group in individual for sale in group}
+            group = [s for s in eligible if s in identified]
+            if group and group not in candidates:
+                candidates.append(group)
+        return candidates
+
+    @classmethod
+    def _attribution_plan(cls, forms, sales):
+        """Validate the entire day before allocating proceeds or reported basis.
+
+        Preserve forced individual rows. A split/combined remainder is allowed
+        only when no individual quantity edges remain and every broker row has
+        the same basis-reporting category. Never turn ambiguous individual rows
+        into an aggregate merely because the daily quantity happens to balance.
+        """
+        if any(f.basis_reported and f.cost_basis is None for f in forms):
+            return None, 'Broker basis was reported to the IRS but the basis value is missing'
+        if len({f.form_year for f in forms}) != 1:
+            return None, 'Broker rows on the same date have conflicting form years'
+        remaining_forms, remaining_sales, plan = list(forms), list(sales), []
+        while remaining_forms:
+            matches = cls._row_matches(remaining_forms, remaining_sales)
+            forced = [(form, group[0]) for form, group in matches.items() if len(group) == 1]
+            if forced:
+                if len({sale for _, sale in forced}) != len(forced):
+                    return None, 'Ambiguous broker rows claim the same disposal transaction'
+                for form, sale in forced:
+                    plan.append(([form], [sale]))
+                    remaining_forms.remove(form)
+                    remaining_sales.remove(sale)
+                continue
+            if any(matches.values()):
+                return None, 'Ambiguous individual broker rows cannot be attributed to sales'
+            if len({f.basis_reported for f in remaining_forms}) != 1:
+                return None, 'Ambiguous aggregate has mixed basis-reporting categories'
+            quantity = sum((f.quantity for f in remaining_forms), Decimal(0))
+            if not remaining_sales or abs(quantity - sum(
+                    (s.quantity for s in remaining_sales), Decimal(0))) > QUANTITY_TOLERANCE:
+                return None, 'Remaining broker aggregate quantity does not match the records'
+            plan.append((remaining_forms, remaining_sales))
+            remaining_sales = []
+            break
+        if remaining_sales:
+            return None, 'Broker rows do not account for the complete resolved sale group'
+        return plan, ''
+
     def _apply(self, forms, sales):
         events = [te for sale in sales for te in sale.events]
         weights = [te.quantity for te in events]
         basis_reported = all(f.basis_reported and f.cost_basis is not None for f in forms)
 
-        proceeds = allocate(sum((f.proceeds for f in forms), Decimal(0)), weights)
+        # Combined broker rows do not imply a common execution price. Allocate
+        # their net proceeds by actual net proceeds, not by token quantity.
+        proceeds_weights = [te.proceeds - te.sale_fees for te in events]
+        broker_proceeds = sum((f.proceeds for f in forms), Decimal(0))
+        gross_proceeds = sum((te.proceeds for te in events), Decimal(0))
+        net_proceeds = sum(proceeds_weights, Decimal(0))
+        # Exact figures distinguish small fees from rounding; net wins when
+        # there are no fees and gross and net are identical.
+        if broker_proceeds == net_proceeds:
+            gross_reporting = False
+        elif broker_proceeds == gross_proceeds:
+            gross_reporting = True
+        else:
+            gross_reporting = (abs(broker_proceeds - gross_proceeds) <= ROUNDING_TOLERANCE
+                               and abs(broker_proceeds - net_proceeds) > ROUNDING_TOLERANCE)
+        if gross_reporting:
+            # A gross-reporting broker requires code E for each event's own fee.
+            proceeds_weights = [te.proceeds for te in events]
+        proceeds = allocate(broker_proceeds, proceeds_weights)
         if basis_reported:
             bases = allocate(sum((f.cost_basis for f in forms), Decimal(0)), weights)
 
@@ -196,8 +329,9 @@ class Reconciliation(object):
                 event_codes.add('B')
 
             proceeds_diff = our_proceeds - te.form_proceeds
-            if te.sale_fees and abs(proceeds_diff + te.sale_fees) <= ROUNDING_TOLERANCE:
-                # The broker reported proceeds before selling costs
+            if gross_reporting and te.sale_fees:
+                # Decide gross vs net from the whole matched group, not each
+                # tiny lot fee (which can itself be below the rounding tolerance).
                 event_codes.add('E')
                 proceeds_diff += te.sale_fees
             if abs(proceeds_diff) > ROUNDING_TOLERANCE:
