@@ -563,8 +563,8 @@ def holding_period(acquired, disposed):
     if acquired is None:
         return SHORT_TERM
 
-    acquired = acquired.astimezone(config.TZ_LOCAL).date()
-    disposed = disposed.astimezone(config.TZ_LOCAL).date()
+    acquired = config.to_local(acquired).date()
+    disposed = config.to_local(disposed).date()
     try:
         anniversary = acquired.replace(year=acquired.year + 1)
     except ValueError:
@@ -584,7 +584,7 @@ def form_8949_box(s, term):
     or H/K (basis not reported), see form_1099da.
     """
     short = term == SHORT_TERM
-    if s.timestamp.astimezone(config.TZ_LOCAL).year < 2025:
+    if config.to_local(s.timestamp).year < 2025:
         # Digital assets were rarely reported on a 1099-B
         return 'C' if short else 'F'
     return 'I' if short else 'L'

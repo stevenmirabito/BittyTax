@@ -9,6 +9,7 @@ import pkg_resources
 from colorama import Fore, Back
 import yaml
 import dateutil.tz
+import dateutil.parser
 
 from .version import __version__
 
@@ -70,6 +71,8 @@ class Config(object):
         'coingecko_api_key': '',
         'coinbase_zero_fees_are_gifts': False,
         'us_timezone': 'America/Los_Angeles',
+        'us_timezone_from': '2025-01-01',
+        'us_timezone_before': 'Europe/London',
         'us_wallet_cutover': '2025-01-01',
         'transfer_match_window_hours': 24,
         'transfer_match_skew_minutes': 60,
@@ -82,6 +85,10 @@ class Config(object):
     def __init__(self):
         self.debug = False
         self.tax_rules = self.TAX_RULES_UK_INDIVIDUAL
+        # US: local time switches to us_timezone at this moment, earlier years keep the zone
+        #  they were filed with (us_timezone_before)
+        self.tz_switch = None
+        self.TZ_BEFORE = None
         self.start_of_year_month = 4
         self.start_of_year_day = 6
 
@@ -133,19 +140,43 @@ class Config(object):
             if tz_local is None:
                 raise ValueError("Unknown us_timezone: %s" % self.config['us_timezone'])
             self.TZ_LOCAL = tz_local
+            self.TZ_BEFORE = dateutil.tz.gettz(self.config['us_timezone_before'])
+            if self.TZ_BEFORE is None:
+                raise ValueError("Unknown us_timezone_before: %s" %
+                                 self.config['us_timezone_before'])
+            switch = self.config['us_timezone_from']
+            if isinstance(switch, str):
+                switch = dateutil.parser.parse(switch).date()
+            self.tz_switch = datetime(switch.year, switch.month, switch.day, tzinfo=tz_local)
             self.start_of_year_month = 1
             self.start_of_year_day = 1
         elif tax_rules in self.TAX_RULES_UK_COMPANY:
+            self.tz_switch = self.TZ_BEFORE = None
             self.TZ_LOCAL = Config.TZ_UK
             self.start_of_year_month = self.TAX_RULES_UK_COMPANY.index(tax_rules) + 1
             self.start_of_year_day = 1
         else:
+            self.tz_switch = self.TZ_BEFORE = None
             self.TZ_LOCAL = Config.TZ_UK
             self.start_of_year_month = 4
             self.start_of_year_day = 6
 
     def is_us(self):
         return self.tax_rules == self.TAX_RULES_US_INDIVIDUAL
+
+    def local_tz(self, timestamp):
+        """The local time zone in force at a moment."""
+        if self.tz_switch is not None and timestamp < self.tz_switch:
+            return self.TZ_BEFORE
+        return self.TZ_LOCAL
+
+    def to_local(self, timestamp):
+        return timestamp.astimezone(self.local_tz(timestamp))
+
+    def tz_for_year(self, tax_year):
+        if self.tz_switch is not None and tax_year < self.tz_switch.year:
+            return self.TZ_BEFORE
+        return self.TZ_LOCAL
 
     def sym(self):
         if self.ccy == 'GBP':
@@ -164,22 +195,22 @@ class Config(object):
             return datetime(tax_year - 1,
                             self.start_of_year_month,
                             self.start_of_year_day,
-                            tzinfo=config.TZ_LOCAL)
+                            tzinfo=self.tz_for_year(tax_year))
         return datetime(tax_year,
                         self.start_of_year_month,
                         self.start_of_year_day,
-                        tzinfo=config.TZ_LOCAL)
+                        tzinfo=self.tz_for_year(tax_year))
 
     def get_tax_year_end(self, tax_year):
         if self.start_of_year_month == 1:
             return datetime(tax_year + 1,
                             self.start_of_year_month,
                             self.start_of_year_day,
-                            tzinfo=config.TZ_LOCAL) - timedelta(microseconds=1)
+                            tzinfo=self.tz_for_year(tax_year)) - timedelta(microseconds=1)
         return datetime(tax_year,
                         self.start_of_year_month,
                         self.start_of_year_day,
-                        tzinfo=config.TZ_LOCAL) - timedelta(microseconds=1)
+                        tzinfo=self.tz_for_year(tax_year)) - timedelta(microseconds=1)
 
     def format_tax_year(self, tax_year):
         start = self.get_tax_year_start(tax_year)

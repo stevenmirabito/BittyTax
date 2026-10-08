@@ -22,7 +22,7 @@ def unique_filename(name, extension='csv'):
 def irs_date(timestamp):
     if timestamp is None:
         return 'UNKNOWN'
-    return timestamp.astimezone(config.TZ_LOCAL).strftime('%m/%d/%Y')
+    return config.to_local(timestamp).strftime('%m/%d/%Y')
 
 
 class ExportForm8949(object):

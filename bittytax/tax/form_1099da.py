@@ -30,7 +30,7 @@ NOT_ON_1099DA = 'Not on 1099-DA'
 
 
 def _local_date(timestamp):
-    return timestamp.astimezone(config.TZ_LOCAL).date()
+    return config.to_local(timestamp).date()
 
 
 def _utc_date(timestamp):
@@ -165,7 +165,7 @@ class Reconciliation(object):
     def _sales(events):
         by_sale = {}
         for te in events:
-            if te.date.astimezone(config.TZ_LOCAL).year >= 2025:
+            if config.to_local(te.date).year >= 2025:
                 by_sale.setdefault(te.sale_id, []).append(te)
         return sorted((Sale(group) for group in by_sale.values()),
                       key=lambda s: (s.timestamp, s.events[0].sale_id))

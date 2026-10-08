@@ -280,6 +280,7 @@ Phases 1–3 are enough to produce a correct 2025 return for records without an 
 What was built differs from the plan above in these places:
 
 - **Naive timestamps stay UTC** (§5.4). The plan said to read timestamps with no zone as Pacific time. Conversion-tool output and existing records rely on UTC, so only local time (year boundaries, holding periods, the cutover) uses `us_timezone`. `Config.set_tax_rules` still runs before import, because records are converted to local time as they are created.
+- **Filed years keep London time** (decision after validating real data). Local dates before 2025-01-01 00:00 Pacific use `us_timezone_before` (Europe/London, as filed). From then on they use `us_timezone`. The tax year, price date, holding period and 8949 dates follow the zone in force at each moment, so no transaction moves into an already-filed year.
 - **Config keys** (§3.5): `transfer_match_window_hours` (number) and `transfer_match_tolerance` (fraction, default 0.005), instead of `24h` / `0.5%`. All US keys are documented in `bittytax/config/bittytax.conf`.
 - **Lot IDs** are `<asset>:<wallet acquired in>:<UTC timestamp>`, with `#n` added only for acquisitions in the same second. They don't include the TID, so adding other records doesn't change them. `--export-lots` lists them for specific identification.
 - **Transitions are traced only**: the allocation modes stay deferred (§10). The tracing pass reports its own shortfalls, labelled `[tracing]`, separately from the universal pass (`[universal]`) and the per-wallet pass (`[per-wallet]`).

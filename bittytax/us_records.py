@@ -30,7 +30,7 @@ def parse_timestamp(value, default_tz):
     parsed = dateutil.parser.parse(value, tzinfos=config.TZ_INFOS)
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=default_tz)
-    return parsed.astimezone(config.TZ_LOCAL)
+    return config.to_local(parsed)
 
 
 def parse_decimal(value, required=True):

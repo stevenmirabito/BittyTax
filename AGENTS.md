@@ -87,8 +87,8 @@ Those are `Gift-*`, `Spend`, `Trade` or income types.
 - **Timestamps:** use the exact time from the source. An Excel date/time cell is read as
   **UTC**. Text must carry a zone, e.g. `2025-03-01T12:00:00Z` or
   `2025-03-01T04:00:00-08:00` (`UTC`, `GMT` and `BST` abbreviations also work). Text with no
-  zone is read as UTC. The tax year, holding period and the 2025-01-01 per-wallet cutover are
-  then worked out in Pacific time.
+  zone is read as UTC. From 2025 the tax year, holding period and price date are worked out in
+  Pacific time. Earlier years use London time, as they were filed.
 - **Hand-entered rows are the usual source of time errors.** Typing a Pacific wall-clock time
   into an Excel date cell records it as UTC, 7 or 8 hours early. In the existing records this
   was the cause of most unmatched transfers, and of sales that appeared to come before the
@@ -216,6 +216,8 @@ Add new years to the same sheet.
 local_currency: 'USD'
 date_format: '%m/%d/%Y'
 us_timezone: 'America/Los_Angeles'
+us_timezone_from: '2025-01-01'      # earlier years keep us_timezone_before (as filed)
+us_timezone_before: 'Europe/London'
 wallets: {
     'Coinbase': {custody: broker, issues_1099da: True},
     'Ledger': {custody: self},

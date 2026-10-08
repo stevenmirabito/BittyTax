@@ -35,7 +35,7 @@ def parse_date(token):
     parsed = dateutil.parser.parse(token)
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=config.TZ_LOCAL)
-    return parsed.astimezone(config.TZ_LOCAL)
+    return config.to_local(parsed)
 
 
 def tid_key(t):

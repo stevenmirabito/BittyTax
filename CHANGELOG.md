@@ -4,7 +4,7 @@
 - US tax calculator: a buy later on the same day is no longer matched to an earlier sell.
 - US tax calculator: units sold that can't be traced to an acquisition fail the integrity check, instead of taking an average cost.
 - US tax calculator: Gift-Sent, Gift-Spouse, Charity-Sent and Lost are not treated as sales.
-- US tax calculator: tax years and holding periods use US local time, not Europe/London.
+- US tax calculator: tax years, price dates and holding periods use US local time from 2025 (us_timezone_from). Earlier years keep Europe/London, as filed.
 - Binance parser: handle symbols with leading digit.
 - Bitfinex parser: handle '-' in FEE PERC column. ([#197](https://github.com/BittyTax/BittyTax/issues/197))
 - Binance parser: handle a Distribution which is negative. ([#179](https://github.com/BittyTax/BittyTax/issues/179))
